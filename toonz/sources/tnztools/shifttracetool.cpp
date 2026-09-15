@@ -23,10 +23,16 @@
 
 #include "toonz/preferences.h"
 #include "toonzqt/gutil.h"
+#include "tenv.h"
 
 #include "tgl.h"
 #include <math.h>
 #include <QKeyEvent>
+
+//=============================================================================
+
+TEnv::IntVar ShiftTraceStraightTrajectory("ShiftTraceToolStraightTrajectory",
+                                          0);
 
 //=============================================================================
 
@@ -54,6 +60,7 @@ ShiftTraceTool::ShiftTraceTool()
     : TTool("T_ShiftTrace")
     , m_ghostIndex(0)
     , m_curveStatus(NoCurve)
+    , m_trajectoryMode(ArcTrajectory)
     , m_gadget(NoGadget)
     , m_highlightedGadget(NoGadget) {
   bind(TTool::AllTargets);  // Deals with tool deactivation internally
@@ -175,7 +182,8 @@ void ShiftTraceTool::updateCurveAffs() {
   } else {
     double phi0 = 0, phi1 = 0;
     TPointD center;
-    if (circumCenter(center, m_p0, m_p1, m_p2)) {
+    if (m_trajectoryMode == ArcTrajectory &&
+        circumCenter(center, m_p0, m_p1, m_p2)) {
       TPointD v0 = normalize(m_p0 - center);
       TPointD v1 = normalize(m_p1 - center);
       TPointD v2 = normalize(m_p2 - center);
@@ -187,6 +195,12 @@ void ShiftTraceTool::updateCurveAffs() {
     m_aff[0] = TTranslation(m_p2 - m_p0) * TRotation(m_p0, phi0);
     m_aff[1] = TTranslation(m_p2 - m_p1) * TRotation(m_p1, phi1);
   }
+}
+
+void ShiftTraceTool::updateCurveCenters() {
+  if (m_curveStatus != ThreePointsCurve) return;
+  m_center[0] = (m_aff[0] * m_dpiAff).inv() * m_p2;
+  m_center[1] = (m_aff[1] * m_dpiAff).inv() * m_p2;
 }
 
 void ShiftTraceTool::updateGhost() {
@@ -308,7 +322,8 @@ void ShiftTraceTool::drawCurve() {
     glColor3d(0.2, 0.2, 0.2);
 
     TPointD center;
-    if (circumCenter(center, m_p0, m_p1, m_p2)) {
+    if (m_trajectoryMode == ArcTrajectory &&
+        circumCenter(center, m_p0, m_p1, m_p2)) {
       double radius = norm(center - m_p1);
       glBegin(GL_LINE_STRIP);
       int n = 100;
@@ -326,7 +341,10 @@ void ShiftTraceTool::drawCurve() {
       }
       glEnd();
     } else {
-      tglDrawSegment(m_p0, m_p1);
+      // p2 can be dragged off the p0-p1 segment even in straight mode, so a
+      // single p0-p1 line would not follow where the ghosts actually land
+      tglDrawSegment(m_p0, m_p2);
+      tglDrawSegment(m_p2, m_p1);
     }
     color = m_highlightedGadget == CurvePmGadget ? TPixel32(200, 100, 100)
                                                  : TPixel32::White;
@@ -338,6 +356,8 @@ void ShiftTraceTool::onActivate() {
   m_ghostIndex  = 0;
   m_curveStatus = NoCurve;
   clearData();
+  m_trajectoryMode =
+      ShiftTraceStraightTrajectory ? StraightTrajectory : ArcTrajectory;
   OnionSkinMask osm =
       TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
   m_aff[0]    = osm.getShiftTraceGhostAff(0);
@@ -566,9 +586,7 @@ void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
       m_curveStatus = ThreePointsCurve;
       updateCurveAffs();
       updateGhost();
-
-      m_center[0] = (m_aff[0] * m_dpiAff).inv() * m_p2;
-      m_center[1] = (m_aff[1] * m_dpiAff).inv() * m_p2;
+      updateCurveCenters();
     }
   }
   m_gadget = NoGadget;
@@ -613,6 +631,20 @@ void ShiftTraceTool::onLeave() {
 void ShiftTraceTool::setCurrentGhostIndex(int index) {
   m_ghostIndex = index;
   updateBox();
+  invalidate();
+}
+
+void ShiftTraceTool::setTrajectoryMode(TrajectoryMode mode) {
+  if (m_trajectoryMode == mode) return;
+  m_trajectoryMode             = mode;
+  ShiftTraceStraightTrajectory = (mode == StraightTrajectory) ? 1 : 0;
+
+  // Ghosts moved by hand without a trajectory must survive a mode switch
+  if (m_curveStatus == ThreePointsCurve) {
+    updateCurveAffs();
+    updateCurveCenters();
+    updateGhost();
+  }
   invalidate();
 }
 

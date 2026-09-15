@@ -2749,6 +2749,8 @@ ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
   m_prevRadioBtn  = new QRadioButton(tr("Previous Drawing"), this);
   m_afterRadioBtn = new QRadioButton(tr("Following Drawing"), this);
 
+  m_straightTrajectoryCB = new DVGui::CheckBox(tr("Straight Trajectory"), this);
+
   m_prevFrame->setFixedSize(10, 21);
   m_afterFrame->setFixedSize(10, 21);
   int buttonWidth =
@@ -2768,6 +2770,10 @@ ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
   m_layout->addWidget(m_afterRadioBtn, 0);
   m_layout->addWidget(m_resetAfterGhostBtn, 0);
 
+  m_layout->addWidget(new DVGui::Separator("", this, false));
+
+  m_layout->addWidget(m_straightTrajectoryCB, 0);
+
   m_layout->addStretch(1);
 
   connect(m_resetPrevGhostBtn, SIGNAL(clicked(bool)), this,
@@ -2778,6 +2784,8 @@ ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
           SLOT(onPrevRadioBtnClicked()));
   connect(m_afterRadioBtn, SIGNAL(clicked(bool)), this,
           SLOT(onAfterRadioBtnClicked()));
+  connect(m_straightTrajectoryCB, SIGNAL(clicked(bool)), this,
+          SLOT(onStraightTrajectoryToggled(bool)));
 
   updateStatus();
 }
@@ -2852,6 +2860,9 @@ void ShiftTraceToolOptionBox::updateStatus() {
     m_prevRadioBtn->setChecked(true);
   else  // ghostIndex == 1
     m_afterRadioBtn->setChecked(true);
+
+  m_straightTrajectoryCB->setChecked(stTool->getTrajectoryMode() ==
+                                     ShiftTraceTool::StraightTrajectory);
 }
 
 void ShiftTraceToolOptionBox::onPrevRadioBtnClicked() {
@@ -2864,6 +2875,13 @@ void ShiftTraceToolOptionBox::onAfterRadioBtnClicked() {
   ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
   if (!stTool) return;
   stTool->setCurrentGhostIndex(1);
+}
+
+void ShiftTraceToolOptionBox::onStraightTrajectoryToggled(bool checked) {
+  ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
+  if (!stTool) return;
+  stTool->setTrajectoryMode(checked ? ShiftTraceTool::StraightTrajectory
+                                    : ShiftTraceTool::ArcTrajectory);
 }
 
 //=============================================================================

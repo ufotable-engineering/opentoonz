@@ -10,6 +10,8 @@ public:
     ThreePointsCurve
   };
 
+  enum TrajectoryMode { ArcTrajectory, StraightTrajectory };
+
   enum GadgetId {
     NoGadget,
     NoGadget_InBox,
@@ -31,6 +33,7 @@ private:
   TPointD m_p0, m_p1, m_p2;
 
   CurveStatus m_curveStatus;
+  TrajectoryMode m_trajectoryMode;
   GadgetId m_gadget;
   GadgetId m_highlightedGadget;
 
@@ -51,6 +54,7 @@ public:
   void updateData();
   void updateBox();
   void updateCurveAffs();
+  void updateCurveCenters();
   void updateGhost();
 
   void reset() override;
@@ -79,4 +83,7 @@ public:
 
   int getCurrentGhostIndex() { return m_ghostIndex; }
   void setCurrentGhostIndex(int index);
+
+  TrajectoryMode getTrajectoryMode() const { return m_trajectoryMode; }
+  void setTrajectoryMode(TrajectoryMode mode);
 };

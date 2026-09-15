@@ -1644,6 +1644,10 @@ Do you want to proceed?</source>
         <source>Following Drawing</source>
         <translation>後のコマ</translation>
     </message>
+    <message>
+        <source>Straight Trajectory</source>
+        <translation>軌道を直線にする</translation>
+    </message>
 </context>
 <context>
     <name>SkeletonTool</name>
