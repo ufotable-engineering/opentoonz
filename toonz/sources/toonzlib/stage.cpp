@@ -27,6 +27,7 @@
 #include "toonz/txshcolumn.h"
 #include "toonz/txshcell.h"
 #include "toonz/onionskinmask.h"
+#include "toonz/shifttraceresolver.h"
 #include "toonz/dpiscale.h"
 #include "toonz/imagemanager.h"
 #include "toonz/tstageobjecttree.h"
@@ -188,7 +189,7 @@ public:
   };
 
 public:
-  enum ShiftTraceGhostId { NO_GHOST, FIRST_GHOST, SECOND_GHOST, TRACED };
+  enum ShiftTraceGhostId { NO_GHOST, GHOST, TRACED };
 
 public:
   PlayerSet m_players;
@@ -204,6 +205,9 @@ public:
   double m_onionSkinOpacity;
 
   ShiftTraceGhostId m_shiftTraceGhostId;
+  const ShiftTraceGhost *m_shiftTraceGhost;    // the ghost being added
+  int m_shiftTraceGhostDistance;               // its onion skin distance (tint)
+  const ShiftTraceLayout *m_shiftTraceLayout;  // in effect for this visit
   bool m_editingShift;
   bool m_showShiftOrigin;
 
@@ -297,6 +301,9 @@ StageBuilder::StageBuilder()
     , m_ancestorColumnIndex(-1)
     , m_onionSkinOpacity(-1.0)
     , m_shiftTraceGhostId(NO_GHOST)
+    , m_shiftTraceGhost(nullptr)
+    , m_shiftTraceGhostDistance(0)
+    , m_shiftTraceLayout(nullptr)
     , m_editingShift(false)
     , m_showShiftOrigin(false)
     , m_currentXsheetLevel(0)
@@ -474,50 +481,32 @@ void StageBuilder::addCell(PlayerSet &players, ToonzScene *scene, TXsheet *xsh,
     }
 
     if (m_shiftTraceGhostId != NO_GHOST) {
-      // if F1, F2 or F3 key is pressed, then draw only the corresponding ghost
+      const ShiftTraceGhost *ghost = m_shiftTraceGhost;
+
+      // while a flip key is held, draw only the corresponding ghost
       int flipKey = m_onionSkinMask.getGhostFlipKey();
-      if (Qt::Key_F1 <= flipKey && flipKey <= Qt::Key_F3) {
+      if (flipKey == Qt::Key_F2 ||
+          m_shiftTraceLayout->findGhostByFlipKey(flipKey)) {
         if (m_shiftTraceGhostId == TRACED && flipKey == Qt::Key_F2) {
           players.push_back(player);
-        } else if (m_shiftTraceGhostId == FIRST_GHOST &&
-                   flipKey == Qt::Key_F1) {
-          player.m_placement =
-              m_onionSkinMask.getShiftTraceGhostAff(0) * player.m_placement;
-          players.push_back(player);
-        } else if (m_shiftTraceGhostId == SECOND_GHOST &&
-                   flipKey == Qt::Key_F3) {
-          player.m_placement =
-              m_onionSkinMask.getShiftTraceGhostAff(1) * player.m_placement;
+        } else if (ghost && ghost->m_flipKey == flipKey) {
+          player.m_placement = ghost->m_aff * player.m_placement;
           players.push_back(player);
         }
         return;
       }
 
-      else {
-        int opacity         = player.m_opacity;
-        player.m_bingoOrder = 10;
-        if (m_onionSkinMask.getShiftTraceStatus() !=
-            OnionSkinMask::ENABLED_WITHOUT_GHOST_MOVEMENTS) {
-          if (m_shiftTraceGhostId == FIRST_GHOST) {
-            if (m_editingShift || m_showShiftOrigin) {
-              player.m_opacity = 30;
-              players.push_back(player);
-            }
-            player.m_opacity           = opacity;
-            player.m_onionSkinDistance = -1;
-            player.m_placement =
-                m_onionSkinMask.getShiftTraceGhostAff(0) * player.m_placement;
-          } else if (m_shiftTraceGhostId == SECOND_GHOST) {
-            if (m_editingShift || m_showShiftOrigin) {
-              player.m_opacity = 30;
-              players.push_back(player);
-            }
-            player.m_opacity           = opacity;
-            player.m_onionSkinDistance = 1;
-            player.m_placement =
-                m_onionSkinMask.getShiftTraceGhostAff(1) * player.m_placement;
-          }
+      int opacity         = player.m_opacity;
+      player.m_bingoOrder = 10;
+      if (ghost && m_onionSkinMask.getShiftTraceStatus() !=
+                       OnionSkinMask::ENABLED_WITHOUT_GHOST_MOVEMENTS) {
+        if (m_editingShift || m_showShiftOrigin) {
+          player.m_opacity = 30;
+          players.push_back(player);
         }
+        player.m_opacity           = opacity;
+        player.m_onionSkinDistance = m_shiftTraceGhostDistance;
+        player.m_placement         = ghost->m_aff * player.m_placement;
       }
     }
 
@@ -622,44 +611,38 @@ void StageBuilder::addCellWithOnionSkin(PlayerSet &players, ToonzScene *scene,
     bool isCurrent = (subSheetColIndex >= 0)
                          ? (subSheetColIndex == m_currentColumnIndex)
                          : (col == m_currentColumnIndex);
+    const ShiftTraceLayout &layout = *m_shiftTraceLayout;
     if (isCurrent) {
-      TXshCell cell = xsh->getCell(row, col);
+      TXshCell cell                = xsh->getCell(row, col);
+      ShiftTraceCellGetter getCell = ShiftTraceResolver::makeCellGetter(xsh);
 
-      // First Ghost
-      int r;
-      r = row + m_onionSkinMask.getShiftTraceGhostFrameOffset(0);
-      if (r >= 0 && xsh->getCell(r, col) != cell &&
-          (cell.getSimpleLevel() == 0 ||
-           xsh->getCell(r, col).getSimpleLevel() == cell.getSimpleLevel())) {
-        m_shiftTraceGhostId = FIRST_GHOST;
-        addCell(players, scene, xsh, r, col, level, subSheetColIndex);
-      }
-
-      r = row + m_onionSkinMask.getShiftTraceGhostFrameOffset(1);
-      if (r >= 0 && xsh->getCell(r, col) != cell &&
-          (cell.getSimpleLevel() == 0 ||
-           xsh->getCell(r, col).getSimpleLevel() == cell.getSimpleLevel())) {
-        m_shiftTraceGhostId = SECOND_GHOST;
-        addCell(players, scene, xsh, r, col, level, subSheetColIndex);
+      for (int i = 0; i < layout.getGhostCount(); ++i) {
+        ShiftTraceResolvedGhost ghost =
+            ShiftTraceResolver::resolveInXsheet(layout, i, row, col, getCell);
+        if (!ghost.m_valid) continue;
+        m_shiftTraceGhostId       = GHOST;
+        m_shiftTraceGhost         = &layout.getGhost(i);
+        m_shiftTraceGhostDistance = ghost.m_onionSkinDistance;
+        addCell(players, scene, xsh, ghost.m_row, col, level,
+                subSheetColIndex);
       }
 
       // draw current working frame
       if (!cell.isEmpty()) {
         m_shiftTraceGhostId = TRACED;
+        m_shiftTraceGhost   = nullptr;
         addCell(players, scene, xsh, row, col, level, subSheetColIndex);
         m_shiftTraceGhostId = NO_GHOST;
       }
     }
     // flip non-current columns as well
     else {
-      int flipKey = m_onionSkinMask.getGhostFlipKey();
-      if (flipKey == Qt::Key_F1) {
-        int r = row + m_onionSkinMask.getShiftTraceGhostFrameOffset(0);
-        addCell(players, scene, xsh, r, col, level, subSheetColIndex);
-      } else if (flipKey == Qt::Key_F3) {
-        int r = row + m_onionSkinMask.getShiftTraceGhostFrameOffset(1);
-        addCell(players, scene, xsh, r, col, level, subSheetColIndex);
-      } else
+      const ShiftTraceGhost *flipGhost =
+          layout.findGhostByFlipKey(m_onionSkinMask.getGhostFlipKey());
+      if (flipGhost)
+        addCell(players, scene, xsh, row + flipGhost->m_frameOffset, col,
+                level, subSheetColIndex);
+      else
         addCell(players, scene, xsh, row, col, level, subSheetColIndex);
     }
   } else if (locals::doStandardOnionSkin(this, xsh, level, col)) {
@@ -761,7 +744,8 @@ void StageBuilder::addFrame(PlayerSet &players, ToonzScene *scene, TXsheet *xsh,
 void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
                                        TXshSimpleLevel *level,
                                        const TFrameId &fid) {
-  auto addGhost = [&](int ghostIndex, int ghostRow, bool fullOpac = false) {
+  auto addGhost = [&](const ShiftTraceGhost &ghost, int ghostRow, int distance,
+                      bool fullOpac) {
     const TFrameId &ghostFid = level->index2fid(ghostRow);
 
     Player player;
@@ -782,8 +766,7 @@ void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
     player.m_ancestorColumnIndex    = -1;
 
     if (fullOpac) {
-      player.m_placement = m_onionSkinMask.getShiftTraceGhostAff(ghostIndex) *
-                           player.m_placement;
+      player.m_placement = ghost.m_aff * player.m_placement;
       players.push_back(player);
       return;
     }
@@ -795,9 +778,8 @@ void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
       player.m_opacity = 30;
       players.push_back(player);
       player.m_opacity           = opacity;
-      player.m_onionSkinDistance = (ghostIndex == 0) ? -1 : 1;
-      player.m_placement = m_onionSkinMask.getShiftTraceGhostAff(ghostIndex) *
-                           player.m_placement;
+      player.m_onionSkinDistance = distance;
+      player.m_placement         = ghost.m_aff * player.m_placement;
     }
     players.push_back(player);
   };
@@ -808,26 +790,25 @@ void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
 
   // Shift & Trace
   if (m_onionSkinMask.isShiftTraceEnabled()) {
-    int previousOffset = m_onionSkinMask.getShiftTraceGhostFrameOffset(0);
-    int forwardOffset  = m_onionSkinMask.getShiftTraceGhostFrameOffset(1);
+    const ShiftTraceLayout &layout = *m_shiftTraceLayout;
 
-    // If F1, F2 or F3 key is pressed, then only
-    // display the corresponding ghost
-    int flipKey = m_onionSkinMask.getGhostFlipKey();
-    if (Qt::Key_F1 <= flipKey && flipKey <= Qt::Key_F3) {
-      if (flipKey == Qt::Key_F1 && previousOffset != 0) {
-        addGhost(0, row + previousOffset, true);
-        return;
-      } else if (flipKey == Qt::Key_F3 && forwardOffset != 0) {
-        addGhost(1, row + forwardOffset, true);
+    // while a flip key is held, display only the corresponding ghost
+    int flipKey                      = m_onionSkinMask.getGhostFlipKey();
+    const ShiftTraceGhost *flipGhost = layout.findGhostByFlipKey(flipKey);
+    if (flipGhost) {
+      ShiftTraceResolvedGhost rg = ShiftTraceResolver::resolveInLevel(
+          layout, layout.indexOfGhost(flipGhost->m_id), row);
+      if (rg.m_valid) {
+        addGhost(*flipGhost, rg.m_row, rg.m_onionSkinDistance, true);
         return;
       }
-    }
-
-    else {
-      // draw the first ghost
-      if (previousOffset != 0) addGhost(0, row + previousOffset);
-      if (forwardOffset != 0) addGhost(1, row + forwardOffset);
+    } else if (flipKey != Qt::Key_F2) {
+      for (int i = 0; i < layout.getGhostCount(); ++i) {
+        ShiftTraceResolvedGhost rg =
+            ShiftTraceResolver::resolveInLevel(layout, i, row);
+        if (rg.m_valid)
+          addGhost(layout.getGhost(i), rg.m_row, rg.m_onionSkinDistance, false);
+      }
     }
   }
   // Onion Skin
@@ -974,6 +955,7 @@ void Stage::visit(Visitor &visitor, const VisitArgs &args) {
   sb.m_currentColumnIndex     = col;
   sb.m_xsheetLevel            = xsheetLevel;
   sb.m_onionSkinMask          = *osm;
+  sb.m_shiftTraceLayout       = &sb.m_onionSkinMask.getShiftTraceLayout();
   sb.m_currentFrameId         = args.m_currentFrameId;
   sb.m_isGuidedDrawingEnabled = args.m_isGuidedDrawingEnabled;
   sb.m_guidedFrontStroke      = args.m_guidedFrontStroke;
@@ -1028,6 +1010,7 @@ void Stage::visit(Visitor &visitor, TXshSimpleLevel *level, const TFrameId &fid,
   StageBuilder sb;
   sb.m_vs                          = &visitor.m_vs;
   sb.m_onionSkinMask               = osm;
+  sb.m_shiftTraceLayout            = &sb.m_onionSkinMask.getShiftTraceLayout();
   sb.m_currentFrameId              = fid;
   sb.m_isGuidedDrawingEnabled      = isGuidedDrawingEnabled;
   sb.m_guidedFrontStroke           = guidedFrontStroke;
