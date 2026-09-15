@@ -157,11 +157,11 @@ private:
   bool m_enabled;           //!< Whether onion skin is enabled
   bool m_wholeScene;        //!< Whether the OS works on the entire scene
 
-  ShiftTraceStatus m_shiftTraceStatus;
-  bool m_showShiftOrigin;
+  ShiftTraceStatus m_shiftTraceStatus = DISABLED;
+  bool m_showShiftOrigin              = false;
   TAffine m_ghostAff[2];
   TPointD m_ghostCenter[2];
-  int m_ghostFrame[2];         // relative frame position of the ghosts
+  int m_ghostFrame[2] = {0, 0};  // relative frame position of the ghosts
   QList<int> m_ghostFlipKeys;  // If F1, F2 or F3 key is pressed, then only
                                // display the corresponding ghost
 };
