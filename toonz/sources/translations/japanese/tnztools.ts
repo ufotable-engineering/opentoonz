@@ -1369,6 +1369,10 @@ Do you want to proceed?</source>
         <translation>交点にスナップ</translation>
     </message>
     <message>
+        <source>Straight Trajectory</source>
+        <translation>軌道を直線にする</translation>
+    </message>
+    <message>
         <source>Sort Vector Strokes With Palette Order Level : %1 Frame : %2</source>
         <translation>パレット順にベクター線の重ね順を並べ替え&#x3000;レベル：%1&#x3000;フレーム：%2</translation>
     </message>
@@ -1643,10 +1647,6 @@ Do you want to proceed?</source>
     <message>
         <source>Following Drawing</source>
         <translation>後のコマ</translation>
-    </message>
-    <message>
-        <source>Straight Trajectory</source>
-        <translation>軌道を直線にする</translation>
     </message>
 </context>
 <context>

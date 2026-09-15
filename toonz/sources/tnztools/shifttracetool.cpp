@@ -60,10 +60,16 @@ ShiftTraceTool::ShiftTraceTool()
     : TTool("T_ShiftTrace")
     , m_ghostIndex(0)
     , m_curveStatus(NoCurve)
-    , m_trajectoryMode(ArcTrajectory)
     , m_gadget(NoGadget)
-    , m_highlightedGadget(NoGadget) {
+    , m_highlightedGadget(NoGadget)
+    , m_straightTrajectory("Straight Trajectory", false) {
   bind(TTool::AllTargets);  // Deals with tool deactivation internally
+  m_prop.bind(m_straightTrajectory);
+  m_straightTrajectory.setId("StraightTrajectory");
+}
+
+void ShiftTraceTool::updateTranslation() {
+  m_straightTrajectory.setQStringName(QObject::tr("Straight Trajectory"));
 }
 
 void ShiftTraceTool::clearData() {
@@ -173,6 +179,13 @@ void ShiftTraceTool::updateData() {
   updateBox();
 }
 
+// A straight trajectory is the same as the collinear fallback: no arc center,
+// so the ghosts are translated without rotation
+bool ShiftTraceTool::getArcCenter(TPointD &center) const {
+  return !m_straightTrajectory.getValue() &&
+         circumCenter(center, m_p0, m_p1, m_p2);
+}
+
 //
 // Compute m_aff[0] and m_aff[1] according to the current curve
 //
@@ -182,8 +195,7 @@ void ShiftTraceTool::updateCurveAffs() {
   } else {
     double phi0 = 0, phi1 = 0;
     TPointD center;
-    if (m_trajectoryMode == ArcTrajectory &&
-        circumCenter(center, m_p0, m_p1, m_p2)) {
+    if (getArcCenter(center)) {
       TPointD v0 = normalize(m_p0 - center);
       TPointD v1 = normalize(m_p1 - center);
       TPointD v2 = normalize(m_p2 - center);
@@ -198,7 +210,6 @@ void ShiftTraceTool::updateCurveAffs() {
 }
 
 void ShiftTraceTool::updateCurveCenters() {
-  if (m_curveStatus != ThreePointsCurve) return;
   m_center[0] = (m_aff[0] * m_dpiAff).inv() * m_p2;
   m_center[1] = (m_aff[1] * m_dpiAff).inv() * m_p2;
 }
@@ -322,8 +333,7 @@ void ShiftTraceTool::drawCurve() {
     glColor3d(0.2, 0.2, 0.2);
 
     TPointD center;
-    if (m_trajectoryMode == ArcTrajectory &&
-        circumCenter(center, m_p0, m_p1, m_p2)) {
+    if (getArcCenter(center)) {
       double radius = norm(center - m_p1);
       glBegin(GL_LINE_STRIP);
       int n = 100;
@@ -356,8 +366,7 @@ void ShiftTraceTool::onActivate() {
   m_ghostIndex  = 0;
   m_curveStatus = NoCurve;
   clearData();
-  m_trajectoryMode =
-      ShiftTraceStraightTrajectory ? StraightTrajectory : ArcTrajectory;
+  m_straightTrajectory.setValue(ShiftTraceStraightTrajectory ? 1 : 0);
   OnionSkinMask osm =
       TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
   m_aff[0]    = osm.getShiftTraceGhostAff(0);
@@ -634,10 +643,8 @@ void ShiftTraceTool::setCurrentGhostIndex(int index) {
   invalidate();
 }
 
-void ShiftTraceTool::setTrajectoryMode(TrajectoryMode mode) {
-  if (m_trajectoryMode == mode) return;
-  m_trajectoryMode             = mode;
-  ShiftTraceStraightTrajectory = (mode == StraightTrajectory) ? 1 : 0;
+bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
+  ShiftTraceStraightTrajectory = (int)m_straightTrajectory.getValue();
 
   // Ghosts moved by hand without a trajectory must survive a mode switch
   if (m_curveStatus == ThreePointsCurve) {
@@ -646,6 +653,7 @@ void ShiftTraceTool::setTrajectoryMode(TrajectoryMode mode) {
     updateGhost();
   }
   invalidate();
+  return true;
 }
 
 ShiftTraceTool shiftTraceTool;

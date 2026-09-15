@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tools/tool.h"
+#include "tproperty.h"
 
 class ShiftTraceTool final : public TTool {
 public:
@@ -9,8 +10,6 @@ public:
     TwoPointsCurve,  // just during the first click&drag
     ThreePointsCurve
   };
-
-  enum TrajectoryMode { ArcTrajectory, StraightTrajectory };
 
   enum GadgetId {
     NoGadget,
@@ -33,7 +32,6 @@ private:
   TPointD m_p0, m_p1, m_p2;
 
   CurveStatus m_curveStatus;
-  TrajectoryMode m_trajectoryMode;
   GadgetId m_gadget;
   GadgetId m_highlightedGadget;
 
@@ -44,6 +42,11 @@ private:
   TPointD m_center[2];
 
   TAffine m_oldAff;
+
+  TPropertyGroup m_prop;
+  TBoolProperty m_straightTrajectory;
+
+  bool getArcCenter(TPointD &center) const;
 
 public:
   ShiftTraceTool();
@@ -81,9 +84,10 @@ public:
 
   int getCursorId() const override;
 
+  TPropertyGroup *getProperties(int targetType) override { return &m_prop; }
+  bool onPropertyChanged(std::string propertyName) override;
+  void updateTranslation() override;
+
   int getCurrentGhostIndex() { return m_ghostIndex; }
   void setCurrentGhostIndex(int index);
-
-  TrajectoryMode getTrajectoryMode() const { return m_trajectoryMode; }
-  void setTrajectoryMode(TrajectoryMode mode);
 };

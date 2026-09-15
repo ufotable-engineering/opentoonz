@@ -745,7 +745,6 @@ class ShiftTraceToolOptionBox final : public ToolOptionsBox {
   QFrame *m_prevFrame, *m_afterFrame;
   QRadioButton *m_prevRadioBtn, *m_afterRadioBtn;
   QPushButton *m_resetPrevGhostBtn, *m_resetAfterGhostBtn;
-  DVGui::CheckBox *m_straightTrajectoryCB;
   TTool *m_tool;
   void resetGhost(int index);
 
@@ -754,14 +753,14 @@ protected:
   void hideEvent(QShowEvent *);
 
 public:
-  ShiftTraceToolOptionBox(QWidget *parent = 0, TTool *tool = 0);
+  ShiftTraceToolOptionBox(QWidget *parent = 0, TTool *tool = 0,
+                          ToolHandle *toolHandle = 0);
   void updateStatus() override;
 protected slots:
   void onResetPrevGhostBtnPressed();
   void onResetAfterGhostBtnPressed();
   void onPrevRadioBtnClicked();
   void onAfterRadioBtnClicked();
-  void onStraightTrajectoryToggled(bool checked);
   void updateColors();
 };
 
