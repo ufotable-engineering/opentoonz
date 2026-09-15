@@ -110,6 +110,7 @@ set(HEADERS
     ../include/toonz/scenefx.h
     ../include/toonz/sceneproperties.h
     ../include/toonz/sceneresources.h
+    ../include/toonz/shifttraceedit.h
     ../include/toonz/shifttraceresolver.h
     ../include/toonz/shifttracestate.h
     ../include/toonz/skeleton.h
@@ -229,6 +230,7 @@ set(SOURCES
     scriptbinding_scene.cpp
     scriptbinding_toonz_raster_converter.cpp
     scriptengine.cpp
+    shifttraceedit.cpp
     shifttraceresolver.cpp
     shifttracestate.cpp
     skeleton.cpp

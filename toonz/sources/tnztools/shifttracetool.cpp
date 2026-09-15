@@ -51,40 +51,43 @@ static bool circumCenter(TPointD &out, const TPointD &a, const TPointD &b,
 //=============================================================================
 
 ShiftTraceTool::ShiftTraceTool()
-    : TTool("T_ShiftTrace")
-    , m_ghostIndex(0)
-    , m_curveStatus(NoCurve)
-    , m_gadget(NoGadget)
-    , m_highlightedGadget(NoGadget) {
+    : TTool("T_ShiftTrace"), m_gadget(NoGadget), m_highlightedGadget(NoGadget) {
   bind(TTool::AllTargets);  // Deals with tool deactivation internally
 }
 
-void ShiftTraceTool::clearData() {
-  m_ghostIndex        = 0;
-  m_curveStatus       = NoCurve;
+void ShiftTraceTool::clearDerivedData() {
   m_gadget            = NoGadget;
   m_highlightedGadget = NoGadget;
 
   m_box = TRectD();
-  for (int i = 0; i < 2; i++) {
-    m_row[i]    = -1;
-    m_aff[i]    = TAffine();
-    m_center[i] = TPointD();
-  }
+  m_resolved.clear();
 }
 
-void ShiftTraceTool::updateBox() {
-  if (m_ghostIndex < 0 || 2 <= m_ghostIndex || m_row[m_ghostIndex] < 0) return;
+const ShiftTraceResolvedGhost *ShiftTraceTool::findResolved(int ghostId) const {
+  for (const ShiftTraceResolvedGhost &rg : m_resolved)
+    if (rg.m_ghostId == ghostId) return &rg;
+  return nullptr;
+}
+
+void ShiftTraceTool::storeActiveGhostId(int ghostId) {
+  ShiftTraceEdit::editState(
+      TTool::getApplication()->getCurrentOnionSkin(),
+      [ghostId](ShiftTraceState &state) { state.setActiveGhostId(ghostId); },
+      ShiftTraceEdit::Notify::None);
+}
+
+void ShiftTraceTool::updateBox(int ghostId) {
+  const ShiftTraceResolvedGhost *rg = findResolved(ghostId);
+  if (!rg || !rg->m_valid || rg->m_row < 0) return;
 
   TImageP img;
 
   TApplication *app = TTool::getApplication();
   if (app->getCurrentFrame()->isEditingScene()) {
-    int col      = app->getCurrentColumn()->getColumnIndex();
-    int row      = m_row[m_ghostIndex];
     TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
 
-    TXshCell cell       = xsh->getCell(row, col);
+    int col             = app->getCurrentColumn()->getColumnIndex();
+    TXshCell cell       = xsh->getCell(rg->m_row, col);
     TXshSimpleLevel *sl = cell.getSimpleLevel();
     if (sl) {
       m_dpiAff = getDpiAffine(sl, cell.m_frameId);
@@ -98,7 +101,7 @@ void ShiftTraceTool::updateBox() {
     TXshSimpleLevel *sl = level->getSimpleLevel();
     if (!sl) return;
 
-    const TFrameId &ghostFid = sl->index2fid(m_row[m_ghostIndex]);
+    const TFrameId &ghostFid = sl->index2fid(rg->m_row);
     m_dpiAff                 = getDpiAffine(sl, ghostFid);
     img                      = sl->getFrame(ghostFid, false);
   }
@@ -118,37 +121,21 @@ void ShiftTraceTool::updateBox() {
   }
 }
 
-void ShiftTraceTool::updateData() {
+void ShiftTraceTool::updateData(const ShiftTraceLayout &layout,
+                                int activeGhostId) {
   m_box = TRectD();
-  for (int i = 0; i < 2; i++) m_row[i] = -1;
+  m_resolved.clear();
   m_dpiAff          = TAffine();
   TApplication *app = TTool::getApplication();
 
-  OnionSkinMask osm  = app->getCurrentOnionSkin()->getOnionSkinMask();
-  int previousOffset = osm.getShiftTraceGhostFrameOffset(0);
-  int forwardOffset  = osm.getShiftTraceGhostFrameOffset(1);
-  // we must find the prev (m_row[0]) and next (m_row[1]) reference images
-  // (either might not exist)
-  // see also stage.cpp, StageBuilder::addCellWithOnionSkin
   if (app->getCurrentFrame()->isEditingScene()) {
-    TXsheet *xsh  = app->getCurrentXsheet()->getXsheet();
-    int row       = app->getCurrentFrame()->getFrame();
-    int col       = app->getCurrentColumn()->getColumnIndex();
-    TXshCell cell = xsh->getCell(row, col);
-    int r;
-    r = row + previousOffset;
-    if (r >= 0 && xsh->getCell(r, col) != cell &&
-        (cell.getSimpleLevel() == 0 ||
-         xsh->getCell(r, col).getSimpleLevel() == cell.getSimpleLevel())) {
-      m_row[0] = r;
-    }
-
-    r = row + forwardOffset;
-    if (r >= 0 && xsh->getCell(r, col) != cell &&
-        (cell.getSimpleLevel() == 0 ||
-         xsh->getCell(r, col).getSimpleLevel() == cell.getSimpleLevel())) {
-      m_row[1] = r;
-    }
+    TXsheet *xsh                 = app->getCurrentXsheet()->getXsheet();
+    int row                      = app->getCurrentFrame()->getFrame();
+    int col                      = app->getCurrentColumn()->getColumnIndex();
+    ShiftTraceCellGetter getCell = ShiftTraceResolver::makeCellGetter(xsh);
+    for (int i = 0; i < layout.getGhostCount(); ++i)
+      m_resolved.push_back(
+          ShiftTraceResolver::resolveInXsheet(layout, i, row, col, getCell));
   }
   // on editing level
   else {
@@ -158,63 +145,58 @@ void ShiftTraceTool::updateData() {
       if (sl) {
         TFrameId fid = app->getCurrentFrame()->getFid();
         int row      = sl->guessIndex(fid);
-        m_row[0]     = row + previousOffset;
-        m_row[1]     = row + forwardOffset;
+        for (int i = 0; i < layout.getGhostCount(); ++i)
+          m_resolved.push_back(
+              ShiftTraceResolver::resolveInLevel(layout, i, row));
       }
     }
   }
-  updateBox();
+  updateBox(activeGhostId);
 }
 
 //
-// Compute m_aff[0] and m_aff[1] according to the current curve
+// Compute the affines of the previous and following ghosts according to the
+// current curve
 //
-void ShiftTraceTool::updateCurveAffs() {
-  if (m_curveStatus != ThreePointsCurve) {
-    m_aff[0] = m_aff[1] = TAffine();
-  } else {
-    double phi0 = 0, phi1 = 0;
-    TPointD center;
-    if (circumCenter(center, m_p0, m_p1, m_p2)) {
-      TPointD v0 = normalize(m_p0 - center);
-      TPointD v1 = normalize(m_p1 - center);
-      TPointD v2 = normalize(m_p2 - center);
-      TPointD u0(-v0.y, v0.x);
-      TPointD u1(-v1.y, v1.x);
-      phi0 = atan2((v2 * u0), (v2 * v0)) * 180.0 / 3.1415;
-      phi1 = atan2((v2 * u1), (v2 * v1)) * 180.0 / 3.1415;
-    }
-    m_aff[0] = TTranslation(m_p2 - m_p0) * TRotation(m_p0, phi0);
-    m_aff[1] = TTranslation(m_p2 - m_p1) * TRotation(m_p1, phi1);
+void ShiftTraceTool::applyCurve(ShiftTraceLayout &layout) {
+  ShiftTraceGhost *previous  = layout.findGhost(ShiftTrace::kPreviousGhostId);
+  ShiftTraceGhost *following = layout.findGhost(ShiftTrace::kFollowingGhostId);
+  const ShiftTraceCurve &curve = layout.getCurve();
+
+  if (curve.m_status != ShiftTraceCurve::Status::ThreePoints) {
+    if (previous) previous->m_aff = TAffine();
+    if (following) following->m_aff = TAffine();
+    return;
   }
-}
 
-void ShiftTraceTool::updateGhost() {
-  OnionSkinMask osm =
-      TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
-  osm.setShiftTraceGhostAff(0, m_aff[0]);
-  osm.setShiftTraceGhostAff(1, m_aff[1]);
-  osm.setShiftTraceGhostCenter(0, m_center[0]);
-  osm.setShiftTraceGhostCenter(1, m_center[1]);
-  TTool::getApplication()->getCurrentOnionSkin()->setOnionSkinMask(osm);
+  double phi0 = 0, phi1 = 0;
+  TPointD center;
+  if (circumCenter(center, curve.m_p0, curve.m_p1, curve.m_p2)) {
+    TPointD v0 = normalize(curve.m_p0 - center);
+    TPointD v1 = normalize(curve.m_p1 - center);
+    TPointD v2 = normalize(curve.m_p2 - center);
+    TPointD u0(-v0.y, v0.x);
+    TPointD u1(-v1.y, v1.x);
+    phi0 = atan2((v2 * u0), (v2 * v0)) * 180.0 / 3.1415;
+    phi1 = atan2((v2 * u1), (v2 * v1)) * 180.0 / 3.1415;
+  }
+  if (previous)
+    previous->m_aff =
+        TTranslation(curve.m_p2 - curve.m_p0) * TRotation(curve.m_p0, phi0);
+  if (following)
+    following->m_aff =
+        TTranslation(curve.m_p2 - curve.m_p1) * TRotation(curve.m_p1, phi1);
 }
 
 void ShiftTraceTool::reset() {
-  int ghostIndex = m_ghostIndex;
+  int ghostId = getActiveGhostId();
   onActivate();
   invalidate();
-  m_ghostIndex = ghostIndex;
+  storeActiveGhostId(ghostId);
 
   TTool::getApplication()
       ->getCurrentTool()
       ->notifyToolChanged();  // Refreshes toolbar values
-}
-
-TAffine ShiftTraceTool::getGhostAff() {
-  if (0 <= m_ghostIndex && m_ghostIndex < 2)
-    return m_aff[m_ghostIndex] * m_dpiAff;
-  else
-    return TAffine();
 }
 
 void ShiftTraceTool::drawDot(const TPointD &center, double r,
@@ -225,15 +207,17 @@ void ShiftTraceTool::drawDot(const TPointD &center, double r,
   tglDrawCircle(center, r);
 }
 
-void ShiftTraceTool::drawControlRect() {  // TODO
-  if (m_ghostIndex < 0 || m_ghostIndex > 1) return;
-  int row = m_row[m_ghostIndex];
-  if (row < 0) return;
+void ShiftTraceTool::drawControlRect(const ShiftTraceLayout &layout,
+                                     int activeGhostId) {
+  const ShiftTraceGhost *ghost = layout.findGhost(activeGhostId);
+  if (!ghost) return;
+  const ShiftTraceResolvedGhost *rg = findResolved(activeGhostId);
+  if (!rg || !rg->m_valid || rg->m_row < 0) return;
 
   TRectD box = m_box;
   if (box.isEmpty()) return;
   glPushMatrix();
-  tglMultMatrix(getGhostAff());
+  tglMultMatrix(ghost->m_aff * m_dpiAff);
 
   TPixel32 color;
 
@@ -243,7 +227,7 @@ void ShiftTraceTool::drawControlRect() {  // TODO
     bool inksOnly;
     Preferences::instance()->getOnionData(frontOniColor, backOniColor,
                                           inksOnly);
-    color       = (m_ghostIndex == 0) ? backOniColor : frontOniColor;
+    color       = (rg->m_onionSkinDistance < 0) ? backOniColor : frontOniColor;
     double unit = sqrt(tglGetPixelSize2());
     unit *= getDevicePixelRatio(m_viewer->viewerWidget());
     TRectD coloredBox = box.enlarge(3.0 * unit);
@@ -275,78 +259,91 @@ void ShiftTraceTool::drawControlRect() {  // TODO
   drawDot(box.getP01(), r, color);
   drawDot(box.getP10(), r, color);
   drawDot(box.getP11(), r, color);
-  if (m_curveStatus == NoCurve) {
+  if (layout.getCurve().m_status == ShiftTraceCurve::Status::None) {
     color = m_highlightedGadget == MoveCenterGadget ? TPixel32(200, 100, 100)
                                                     : TPixel32::White;
-    TPointD c = m_center[m_ghostIndex];
+    // The pivot lives in the input space of m_aff; bring it back to image
+    // pixels, which is the space of the matrix pushed above.
+    TPointD c = m_dpiAff.inv() * ghost->m_pivot;
     drawDot(c, r, color);
   }
   glPopMatrix();
 }
 
-void ShiftTraceTool::drawCurve() {
-  if (m_curveStatus == NoCurve) return;
+void ShiftTraceTool::drawCurve(const ShiftTraceLayout &layout) {
+  const ShiftTraceCurve &curve = layout.getCurve();
+  if (curve.m_status == ShiftTraceCurve::Status::None) return;
   double r = 4 * sqrt(tglGetPixelSize2());
   double u = getPixelSize();
-  if (m_curveStatus == TwoPointsCurve) {
+  if (curve.m_status == ShiftTraceCurve::Status::TwoPoints) {
     TPixel32 color = m_highlightedGadget == CurveP0Gadget
                          ? TPixel32(200, 100, 100)
                          : TPixel32::White;
-    drawDot(m_p0, r, color);
+    drawDot(curve.m_p0, r, color);
     glColor3d(0.2, 0.2, 0.2);
-    tglDrawSegment(m_p0, m_p1);
-    drawDot(m_p1, r, TPixel32::Red);
-  } else if (m_curveStatus == ThreePointsCurve) {
+    tglDrawSegment(curve.m_p0, curve.m_p1);
+    drawDot(curve.m_p1, r, TPixel32::Red);
+  } else if (curve.m_status == ShiftTraceCurve::Status::ThreePoints) {
     TPixel32 color = m_highlightedGadget == CurveP0Gadget
                          ? TPixel32(200, 100, 100)
                          : TPixel32::White;
-    drawDot(m_p0, r, color);
+    drawDot(curve.m_p0, r, color);
     color = m_highlightedGadget == CurveP1Gadget ? TPixel32(200, 100, 100)
                                                  : TPixel32::White;
-    drawDot(m_p1, r, color);
+    drawDot(curve.m_p1, r, color);
 
     glColor3d(0.2, 0.2, 0.2);
 
     TPointD center;
-    if (circumCenter(center, m_p0, m_p1, m_p2)) {
-      double radius = norm(center - m_p1);
+    if (circumCenter(center, curve.m_p0, curve.m_p1, curve.m_p2)) {
+      double radius = norm(center - curve.m_p1);
       glBegin(GL_LINE_STRIP);
       int n = 100;
       for (int i = 0; i < n; i++) {
         double t  = (double)i / n;
-        TPointD p = (1 - t) * m_p0 + t * m_p2;
+        TPointD p = (1 - t) * curve.m_p0 + t * curve.m_p2;
         p         = center + radius * normalize(p - center);
         tglVertex(p);
       }
       for (int i = 0; i < n; i++) {
         double t  = (double)i / n;
-        TPointD p = (1 - t) * m_p2 + t * m_p1;
+        TPointD p = (1 - t) * curve.m_p2 + t * curve.m_p1;
         p         = center + radius * normalize(p - center);
         tglVertex(p);
       }
       glEnd();
     } else {
-      tglDrawSegment(m_p0, m_p1);
+      tglDrawSegment(curve.m_p0, curve.m_p1);
     }
     color = m_highlightedGadget == CurvePmGadget ? TPixel32(200, 100, 100)
                                                  : TPixel32::White;
-    drawDot(m_p2, r, color);
+    drawDot(curve.m_p2, r, color);
   }
 }
 
 void ShiftTraceTool::onActivate() {
-  m_ghostIndex  = 0;
-  m_curveStatus = NoCurve;
-  clearData();
-  OnionSkinMask osm =
-      TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
-  m_aff[0]    = osm.getShiftTraceGhostAff(0);
-  m_aff[1]    = osm.getShiftTraceGhostAff(1);
-  m_center[0] = osm.getShiftTraceGhostCenter(0);
-  m_center[1] = osm.getShiftTraceGhostCenter(1);
+  clearDerivedData();
+
+  TApplication *app = TTool::getApplication();
+  storeActiveGhostId(ShiftTrace::kPreviousGhostId);
+
+  // The curve is dropped on activation, but its points and the ghost
+  // transforms it produced are kept.
+  ShiftTraceLayoutView view = ShiftTraceEdit::currentLayout(app);
+  if (view->getCurve().m_status != ShiftTraceCurve::Status::None)
+    ShiftTraceEdit::editCurrentLayout(
+        app,
+        [](ShiftTraceLayout &layout) {
+          ShiftTraceCurve curve = layout.getCurve();
+          curve.m_status        = ShiftTraceCurve::Status::None;
+          layout.setCurve(curve);
+        },
+        ShiftTraceEdit::Notify::None);
 }
 
 void ShiftTraceTool::onDeactivate() {
+  if (m_session.isActive()) m_session.commit();
+
   // Deactivating Shift and Trace mode resets the pseudo tool with keeping the
   // Edit Shift checkbox unchanged
   QAction *shiftTrace = CommandManager::instance()->getAction("MI_ShiftTrace");
@@ -365,20 +362,26 @@ void ShiftTraceTool::onDeactivate() {
 }
 
 ShiftTraceTool::GadgetId ShiftTraceTool::getGadget(const TPointD &p) {
+  ShiftTraceLayoutView view =
+      ShiftTraceEdit::currentLayout(TTool::getApplication());
+  const ShiftTraceCurve &curve = view->getCurve();
+  const ShiftTraceGhost *ghost =
+      view->findGhost(view.m_state->getActiveGhostId());
+
   std::vector<std::pair<TPointD, GadgetId>> gadgets;
-  gadgets.push_back(std::make_pair(m_p0, CurveP0Gadget));
-  gadgets.push_back(std::make_pair(m_p1, CurveP1Gadget));
-  gadgets.push_back(std::make_pair(m_p2, CurvePmGadget));
-  TAffine aff      = getGhostAff();
+  gadgets.push_back(std::make_pair(curve.m_p0, CurveP0Gadget));
+  gadgets.push_back(std::make_pair(curve.m_p1, CurveP1Gadget));
+  gadgets.push_back(std::make_pair(curve.m_p2, CurvePmGadget));
+  TAffine aff      = ghost ? ghost->m_aff * m_dpiAff : TAffine();
   double pixelSize = getPixelSize();
   double d         = 15 * pixelSize;  // offset for rotation handle
-  if (0 <= m_ghostIndex && m_ghostIndex < 2) {
+  if (ghost) {
     gadgets.push_back(std::make_pair(aff * m_box.getP00(), ScaleGadget));
     gadgets.push_back(std::make_pair(aff * m_box.getP01(), ScaleGadget));
     gadgets.push_back(std::make_pair(aff * m_box.getP10(), ScaleGadget));
     gadgets.push_back(std::make_pair(aff * m_box.getP11(), ScaleGadget));
     gadgets.push_back(
-        std::make_pair(aff * m_center[m_ghostIndex], MoveCenterGadget));
+        std::make_pair(ghost->m_aff * ghost->m_pivot, MoveCenterGadget));
   }
   int k           = -1;
   double minDist2 = pow(10 * pixelSize, 2);
@@ -392,7 +395,7 @@ ShiftTraceTool::GadgetId ShiftTraceTool::getGadget(const TPointD &p) {
   if (k >= 0) return gadgets[k].second;
 
   // rect-point
-  if (0 <= m_ghostIndex && m_ghostIndex < 2) {
+  if (ghost) {
     TPointD q  = aff.inv() * p;
     double big = 1.0e6;
     double d = big, x = 0, y = 0;
@@ -449,10 +452,15 @@ void ShiftTraceTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 }
 
 void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
+  TApplication *app = TTool::getApplication();
+  m_session.begin(app);
+
   m_gadget = m_highlightedGadget;
   m_oldPos = m_startPos = pos;
 
   bool notify = false;
+
+  ShiftTraceLayout &layout = m_session.workingLayout();
 
   if (!e.isCtrlPressed() &&
       (m_gadget == NoGadget || m_gadget == NoGadget_InBox)) {
@@ -464,24 +472,30 @@ void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 
     int row = getViewer()->posToRow(e.m_pos, 5.0, false, true);
     if (row >= 0) {
-      int index         = -1;
-      TApplication *app = TTool::getApplication();
+      int ghostId = -1;
       if (app->getCurrentFrame()->isEditingScene()) {
         int currentRow = getFrame();
-        if (m_row[0] >= 0 && row < currentRow)
-          index = 0;
-        else if (m_row[1] >= 0 && row > currentRow)
-          index = 1;
+        const ShiftTraceResolvedGhost *previous =
+            findResolved(ShiftTrace::kPreviousGhostId);
+        const ShiftTraceResolvedGhost *following =
+            findResolved(ShiftTrace::kFollowingGhostId);
+        if (previous && previous->m_valid && row < currentRow)
+          ghostId = ShiftTrace::kPreviousGhostId;
+        else if (following && following->m_valid && row > currentRow)
+          ghostId = ShiftTrace::kFollowingGhostId;
       } else {
-        if (m_row[0] == row)
-          index = 0;
-        else if (m_row[1] == row)
-          index = 1;
+        for (const ShiftTraceResolvedGhost &rg : m_resolved) {
+          if (rg.m_valid && rg.m_row == row) {
+            ghostId = rg.m_ghostId;
+            break;
+          }
+        }
       }
 
-      if (index >= 0) {
-        m_ghostIndex = index;
-        updateBox();
+      if (ghostId >= 0) {
+        m_session.working().setActiveGhostId(ghostId);
+        updateBox(ghostId);
+        m_session.preview();
         m_gadget            = TranslateGadget;
         m_highlightedGadget = TranslateGadget;
         notify              = true;
@@ -491,7 +505,9 @@ void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
     m_gadget = NoGadget_InBox;
   }
 
-  m_oldAff = m_aff[m_ghostIndex];
+  const ShiftTraceGhost *ghost =
+      layout.findGhost(m_session.working().getActiveGhostId());
+  m_oldAff = ghost ? ghost->m_aff : TAffine();
   invalidate();
 
   if (notify) {
@@ -502,74 +518,90 @@ void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 }
 
 void ShiftTraceTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
+  if (!m_session.isActive()) return;
+
+  ShiftTraceLayout &layout = m_session.workingLayout();
+  ShiftTraceGhost *ghost =
+      layout.findGhost(m_session.working().getActiveGhostId());
+  ShiftTraceCurve curve = layout.getCurve();
+
   if (m_gadget == NoGadget || m_gadget == NoGadget_InBox) {
     if (norm(pos - m_oldPos) > 10 * getPixelSize()) {
-      m_curveStatus = TwoPointsCurve;
-      m_p0          = m_oldPos;
-      m_gadget      = CurveP1Gadget;
+      curve.m_status = ShiftTraceCurve::Status::TwoPoints;
+      curve.m_p0     = m_oldPos;
+      m_gadget       = CurveP1Gadget;
     }
   }
 
   if (isCurveGadget(m_gadget)) {
     if (m_gadget == CurveP0Gadget)
-      m_p0 = pos;
+      curve.m_p0 = pos;
     else if (m_gadget == CurveP1Gadget)
-      m_p1 = pos;
+      curve.m_p1 = pos;
     else
-      m_p2 = pos;
-    updateCurveAffs();
+      curve.m_p2 = pos;
+    layout.setCurve(curve);
+    applyCurve(layout);
+  } else if (!ghost) {
+    // nothing to drag
   } else if (m_gadget == RotateGadget) {
-    TAffine aff = getGhostAff();
-    TPointD c   = aff * m_center[m_ghostIndex];
-    TPointD a   = m_oldPos - c;
-    TPointD b   = pos - c;
-    m_oldPos    = pos;
-    TPointD u   = normalize(a);
+    TPointD c = ghost->m_aff * ghost->m_pivot;
+    TPointD a = m_oldPos - c;
+    TPointD b = pos - c;
+    m_oldPos  = pos;
+    TPointD u = normalize(a);
     double phi =
         atan2(-u.y * b.x + u.x * b.y, u.x * b.x + u.y * b.y) * 180.0 / 3.14153;
 
-    TPointD imgC = aff * m_center[m_ghostIndex];
-
-    m_aff[m_ghostIndex] = TRotation(imgC, phi) * m_aff[m_ghostIndex];
+    ghost->m_aff = TRotation(c, phi) * ghost->m_aff;
   } else if (m_gadget == MoveCenterGadget) {
-    TAffine aff   = getGhostAff().inv();
-    TPointD delta = aff * pos - aff * m_oldPos;
+    TAffine inv   = ghost->m_aff.inv();
+    TPointD delta = inv * pos - inv * m_oldPos;
     m_oldPos      = pos;
-    m_center[m_ghostIndex] += delta;
+    ghost->m_pivot += delta;
   } else if (m_gadget == TranslateGadget) {
-    TPointD delta       = pos - m_oldPos;
-    m_oldPos            = pos;
-    m_aff[m_ghostIndex] = TTranslation(delta) * m_aff[m_ghostIndex];
+    TPointD delta = pos - m_oldPos;
+    m_oldPos      = pos;
+    ghost->m_aff  = TTranslation(delta) * ghost->m_aff;
   } else if (m_gadget == ScaleGadget) {
-    TAffine aff  = getGhostAff();
-    TPointD c    = m_center[m_ghostIndex];
-    TPointD a    = aff.inv() * m_oldPos - c;
-    TPointD b    = aff.inv() * pos - c;
-    TPointD imgC = aff * m_center[m_ghostIndex];
+    TAffine inv  = ghost->m_aff.inv();
+    TPointD c    = ghost->m_pivot;
+    TPointD a    = inv * m_oldPos - c;
+    TPointD b    = inv * pos - c;
+    TPointD imgC = ghost->m_aff * ghost->m_pivot;
 
     if (e.isShiftPressed())
-      m_aff[m_ghostIndex] = TScale(imgC, b.x / a.x, b.y / a.y) * m_oldAff;
+      ghost->m_aff = TScale(imgC, b.x / a.x, b.y / a.y) * m_oldAff;
     else {
-      double scale        = std::max(b.x / a.x, b.y / a.y);
-      m_aff[m_ghostIndex] = TScale(imgC, scale) * m_oldAff;
+      double scale = std::max(b.x / a.x, b.y / a.y);
+      ghost->m_aff = TScale(imgC, scale) * m_oldAff;
     }
   }
 
-  updateGhost();
+  m_session.preview();
   invalidate();
 }
 
 void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
-  if (CurveP0Gadget <= m_gadget && m_gadget <= CurvePmGadget) {
-    if (m_curveStatus == TwoPointsCurve) {
-      m_p2          = (m_p0 + m_p1) * 0.5;
-      m_curveStatus = ThreePointsCurve;
-      updateCurveAffs();
-      updateGhost();
+  if (m_session.isActive()) {
+    ShiftTraceLayout &layout = m_session.workingLayout();
+    if (isCurveGadget(m_gadget)) {
+      ShiftTraceCurve curve = layout.getCurve();
+      if (curve.m_status == ShiftTraceCurve::Status::TwoPoints) {
+        curve.m_p2     = (curve.m_p0 + curve.m_p1) * 0.5;
+        curve.m_status = ShiftTraceCurve::Status::ThreePoints;
+        layout.setCurve(curve);
+        applyCurve(layout);
 
-      m_center[0] = (m_aff[0] * m_dpiAff).inv() * m_p2;
-      m_center[1] = (m_aff[1] * m_dpiAff).inv() * m_p2;
+        // Each ghost rotates about the curve midpoint from now on.
+        const int ids[] = {ShiftTrace::kPreviousGhostId,
+                           ShiftTrace::kFollowingGhostId};
+        for (int id : ids)
+          if (ShiftTraceGhost *ghost = layout.findGhost(id))
+            ghost->m_pivot = ghost->m_aff.inv() * curve.m_p2;
+      }
     }
+    m_session.commit();
   }
   m_gadget = NoGadget;
   invalidate();
@@ -580,9 +612,12 @@ void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
 }
 
 void ShiftTraceTool::draw() {
-  updateData();
-  drawControlRect();
-  drawCurve();
+  ShiftTraceLayoutView view =
+      ShiftTraceEdit::currentLayout(TTool::getApplication());
+  int activeGhostId = view.m_state->getActiveGhostId();
+  updateData(*view, activeGhostId);
+  drawControlRect(*view, activeGhostId);
+  drawCurve(*view);
 }
 
 int ShiftTraceTool::getCursorId() const {
@@ -610,9 +645,17 @@ void ShiftTraceTool::onLeave() {
   TTool::getApplication()->getCurrentOnionSkin()->setOnionSkinMask(osm);
 }
 
-void ShiftTraceTool::setCurrentGhostIndex(int index) {
-  m_ghostIndex = index;
-  updateBox();
+int ShiftTraceTool::getActiveGhostId() const {
+  return TTool::getApplication()
+      ->getCurrentOnionSkin()
+      ->getOnionSkinMask()
+      .getShiftTraceState()
+      .getActiveGhostId();
+}
+
+void ShiftTraceTool::setActiveGhostId(int ghostId) {
+  storeActiveGhostId(ghostId);
+  updateBox(ghostId);
   invalidate();
 }
 

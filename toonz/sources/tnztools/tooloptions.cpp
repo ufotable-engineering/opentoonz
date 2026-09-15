@@ -45,6 +45,7 @@
 #include "toonz/tstageobjecttree.h"
 #include "toonz/mypaintbrushstyle.h"
 #include "toonz/tonionskinmaskhandle.h"
+#include "toonz/shifttraceedit.h"
 
 // TnzCore includes
 #include "tproperty.h"
@@ -2795,25 +2796,32 @@ void ShiftTraceToolOptionBox::hideEvent(QShowEvent *) {
              SLOT(updateColors()));
 }
 
-void ShiftTraceToolOptionBox::resetGhost(int index) {
+void ShiftTraceToolOptionBox::resetGhost(int ghostId) {
   TTool::Application *app = TTool::getApplication();
-  OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
-  osm.setShiftTraceGhostCenter(index, TPointD());
-  osm.setShiftTraceGhostAff(index, TAffine());
-  app->getCurrentOnionSkin()->setOnionSkinMask(osm);
+  ShiftTraceEdit::editCurrentLayout(
+      app,
+      [ghostId](ShiftTraceLayout &layout) {
+        if (ShiftTraceGhost *ghost = layout.findGhost(ghostId))
+          ghost->resetTransform();
+      },
+      ShiftTraceEdit::Notify::None);
   app->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
   TTool *tool = app->getCurrentTool()->getTool();
   if (tool) tool->reset();
 
-  if (index == 0)
+  if (ghostId == ShiftTrace::kPreviousGhostId)
     m_resetPrevGhostBtn->setDisabled(true);
-  else  // index == 1
+  else  // following ghost
     m_resetAfterGhostBtn->setDisabled(true);
 }
 
-void ShiftTraceToolOptionBox::onResetPrevGhostBtnPressed() { resetGhost(0); }
+void ShiftTraceToolOptionBox::onResetPrevGhostBtnPressed() {
+  resetGhost(ShiftTrace::kPreviousGhostId);
+}
 
-void ShiftTraceToolOptionBox::onResetAfterGhostBtnPressed() { resetGhost(1); }
+void ShiftTraceToolOptionBox::onResetAfterGhostBtnPressed() {
+  resetGhost(ShiftTrace::kFollowingGhostId);
+}
 
 void ShiftTraceToolOptionBox::updateColors() {
   TPixel front, back;
@@ -2831,39 +2839,34 @@ void ShiftTraceToolOptionBox::updateColors() {
 }
 
 void ShiftTraceToolOptionBox::updateStatus() {
-  TTool::Application *app = TTool::getApplication();
-  OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
-  if (osm.getShiftTraceGhostAff(0).isIdentity() &&
-      osm.getShiftTraceGhostCenter(0) == TPointD())
-    m_resetPrevGhostBtn->setDisabled(true);
-  else
-    m_resetPrevGhostBtn->setEnabled(true);
+  TTool::Application *app   = TTool::getApplication();
+  ShiftTraceLayoutView view = ShiftTraceEdit::currentLayout(app);
 
-  if (osm.getShiftTraceGhostAff(1).isIdentity() &&
-      osm.getShiftTraceGhostCenter(1) == TPointD())
-    m_resetAfterGhostBtn->setDisabled(true);
-  else
-    m_resetAfterGhostBtn->setEnabled(true);
+  const ShiftTraceGhost *previous =
+      view->findGhost(ShiftTrace::kPreviousGhostId);
+  m_resetPrevGhostBtn->setEnabled(previous && previous->hasTransform());
+
+  const ShiftTraceGhost *following =
+      view->findGhost(ShiftTrace::kFollowingGhostId);
+  m_resetAfterGhostBtn->setEnabled(following && following->hasTransform());
 
   // Check the ghost index
-  ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
-  if (!stTool) return;
-  if (stTool->getCurrentGhostIndex() == 0)
+  if (view.m_state->getActiveGhostId() == ShiftTrace::kPreviousGhostId)
     m_prevRadioBtn->setChecked(true);
-  else  // ghostIndex == 1
+  else  // following ghost
     m_afterRadioBtn->setChecked(true);
 }
 
 void ShiftTraceToolOptionBox::onPrevRadioBtnClicked() {
   ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
   if (!stTool) return;
-  stTool->setCurrentGhostIndex(0);
+  stTool->setActiveGhostId(ShiftTrace::kPreviousGhostId);
 }
 
 void ShiftTraceToolOptionBox::onAfterRadioBtnClicked() {
   ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
   if (!stTool) return;
-  stTool->setCurrentGhostIndex(1);
+  stTool->setActiveGhostId(ShiftTrace::kFollowingGhostId);
 }
 
 //=============================================================================

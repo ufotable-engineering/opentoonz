@@ -2,14 +2,13 @@
 
 #include "tools/tool.h"
 
+#include "toonz/shifttraceedit.h"
+#include "toonz/shifttraceresolver.h"
+
+#include <vector>
+
 class ShiftTraceTool final : public TTool {
 public:
-  enum CurveStatus {
-    NoCurve,
-    TwoPointsCurve,  // just during the first click&drag
-    ThreePointsCurve
-  };
-
   enum GadgetId {
     NoGadget,
     NoGadget_InBox,
@@ -27,31 +26,26 @@ public:
 
 private:
   TPointD m_oldPos, m_startPos;
-  int m_ghostIndex;
-  TPointD m_p0, m_p1, m_p2;
-
-  CurveStatus m_curveStatus;
   GadgetId m_gadget;
   GadgetId m_highlightedGadget;
 
+  // Derived from the layout on every draw
   TRectD m_box;
   TAffine m_dpiAff;
-  int m_row[2];
-  TAffine m_aff[2];
-  TPointD m_center[2];
+  std::vector<ShiftTraceResolvedGhost> m_resolved;
 
   TAffine m_oldAff;
+  ShiftTraceDragSession m_session;
 
 public:
   ShiftTraceTool();
 
   ToolType getToolType() const override { return GenericTool; }
 
-  void clearData();
-  void updateData();
-  void updateBox();
-  void updateCurveAffs();
-  void updateGhost();
+  void clearDerivedData();
+  void updateData(const ShiftTraceLayout &layout, int activeGhostId);
+  void updateBox(int ghostId);
+  void applyCurve(ShiftTraceLayout &layout);
 
   void reset() override;
 
@@ -61,12 +55,11 @@ public:
   void leftButtonUp(const TPointD &, const TMouseEvent &) override;
   void draw() override;
 
-  TAffine getGhostAff();
   GadgetId getGadget(const TPointD &);
   void drawDot(const TPointD &center, double r,
                const TPixel32 &color = TPixel32::White);
-  void drawControlRect();
-  void drawCurve();
+  void drawControlRect(const ShiftTraceLayout &layout, int activeGhostId);
+  void drawCurve(const ShiftTraceLayout &layout);
 
   void onActivate() override;
   void onDeactivate() override;
@@ -77,6 +70,10 @@ public:
 
   int getCursorId() const override;
 
-  int getCurrentGhostIndex() { return m_ghostIndex; }
-  void setCurrentGhostIndex(int index);
+  int getActiveGhostId() const;
+  void setActiveGhostId(int ghostId);
+
+private:
+  const ShiftTraceResolvedGhost *findResolved(int ghostId) const;
+  void storeActiveGhostId(int ghostId);
 };
