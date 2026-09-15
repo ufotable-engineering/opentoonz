@@ -7,7 +7,12 @@
 #include "tcommon.h"
 #include "tgeometry.h"
 
+// TnzLib includes
+#include "toonz/shifttracestate.h"
+
 #include <QList>
+
+#include <memory>
 
 #undef DVAPI
 #undef DVVAR
@@ -46,7 +51,7 @@ public:
   };
 
 public:
-  OnionSkinMask() : m_enabled(false), m_wholeScene(false) {}
+  OnionSkinMask();
 
   void clear();
 
@@ -106,6 +111,8 @@ since underlying onion-skinned drawings must be visible.
 
   // Shift & Trace  stuff
 
+  // Mode flags follow menu toggles and key presses, so they are kept out of
+  // ShiftTraceState snapshots.
   ShiftTraceStatus getShiftTraceStatus() const { return m_shiftTraceStatus; }
   void setShiftTraceStatus(ShiftTraceStatus status) {
     m_shiftTraceStatus = status;
@@ -118,25 +125,8 @@ since underlying onion-skinned drawings must be visible.
   bool isShiftTraceEnabled() const { return m_shiftTraceStatus != DISABLED; }
   bool isEditingShift() const { return m_shiftTraceStatus == EDITING_GHOST; }
 
-  const TAffine getShiftTraceGhostAff(int index) const {
-    return m_ghostAff[index];
-  }
-  void setShiftTraceGhostAff(int index, const TAffine &aff);
-
-  const TPointD getShiftTraceGhostCenter(int index) const {
-    return m_ghostCenter[index];
-  }
-  void setShiftTraceGhostCenter(int index, const TPointD &center);
-
-  const int getShiftTraceGhostFrameOffset(int index) {
-    return m_ghostFrame[index];
-  }
-  void setShiftTraceGhostFrameOffset(int index, int offset) {
-    m_ghostFrame[index] = offset;
-  }
-
-  const int getGhostFlipKey() {
-    return (m_ghostFlipKeys.isEmpty()) ? 0 : m_ghostFlipKeys.last();
+  int getGhostFlipKey() const {
+    return m_ghostFlipKeys.isEmpty() ? 0 : m_ghostFlipKeys.last();
   }
   void appendGhostFlipKey(int key) {
     m_ghostFlipKeys.removeAll(key);
@@ -144,6 +134,31 @@ since underlying onion-skinned drawings must be visible.
   }
   void removeGhostFlipKey(int key) { m_ghostFlipKeys.removeAll(key); }
   void clearGhostFlipKey() { m_ghostFlipKeys.clear(); }
+
+  const ShiftTraceState &getShiftTraceState() const {
+    return *m_shiftTraceState;
+  }
+  const ShiftTraceLayout &getShiftTraceLayout() const {
+    return m_shiftTraceState->getLayout();
+  }
+  const std::shared_ptr<const ShiftTraceState> &getShiftTraceStateSnapshot()
+      const {
+    return m_shiftTraceState;
+  }
+  void setShiftTraceState(ShiftTraceState state);
+  void setShiftTraceStateSnapshot(
+      std::shared_ptr<const ShiftTraceState> snapshot);
+
+  // Index-based accessors over the shared layout, where the ghost id equals
+  // the legacy index (0 = previous, 1 = following).
+  TAffine getShiftTraceGhostAff(int index) const;
+  void setShiftTraceGhostAff(int index, const TAffine &aff);
+
+  TPointD getShiftTraceGhostCenter(int index) const;
+  void setShiftTraceGhostCenter(int index, const TPointD &center);
+
+  int getShiftTraceGhostFrameOffset(int index) const;
+  void setShiftTraceGhostFrameOffset(int index, int offset);
 
 private:
   using Marker = std::pair<int, double>;
@@ -154,16 +169,14 @@ private:
                                                int position);
 
   MarkerList m_fos, m_mos;  //!< Fixed and Mobile Onion Skin markers
-  bool m_enabled;           //!< Whether onion skin is enabled
-  bool m_wholeScene;        //!< Whether the OS works on the entire scene
+  bool m_enabled    = false;  //!< Whether onion skin is enabled
+  bool m_wholeScene = false;  //!< Whether the OS works on the entire scene
 
   ShiftTraceStatus m_shiftTraceStatus = DISABLED;
   bool m_showShiftOrigin              = false;
-  TAffine m_ghostAff[2];
-  TPointD m_ghostCenter[2];
-  int m_ghostFrame[2] = {0, 0};  // relative frame position of the ghosts
   QList<int> m_ghostFlipKeys;  // If F1, F2 or F3 key is pressed, then only
                                // display the corresponding ghost
+  std::shared_ptr<const ShiftTraceState> m_shiftTraceState;  // never null
 };
 
 //***************************************************************************

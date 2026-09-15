@@ -48,24 +48,30 @@ double inline getIncrement(int paperThickness) {
   return Incr[paperThickness];
 }
 
+//-------------------------------------------------------------------
+
+const std::shared_ptr<const ShiftTraceState> &defaultShiftTraceState() {
+  static const std::shared_ptr<const ShiftTraceState> state =
+      std::make_shared<const ShiftTraceState>();
+  return state;
+}
+
 }  // namespace
 
 //***************************************************************************
 //    OnionSkinMask  implementation
 //***************************************************************************
 
+OnionSkinMask::OnionSkinMask() : m_shiftTraceState(defaultShiftTraceState()) {}
+
+//-------------------------------------------------------------------
+
 void OnionSkinMask::clear() {
   m_fos.clear();
   m_mos.clear();
 
   m_shiftTraceStatus = DISABLED;
-
-  m_ghostAff[0]    = TAffine();
-  m_ghostAff[1]    = TAffine();
-  m_ghostCenter[0] = TPointD();
-  m_ghostCenter[1] = TPointD();
-  m_ghostFrame[0]  = 0;
-  m_ghostFrame[1]  = 0;
+  m_shiftTraceState  = defaultShiftTraceState();
 }
 
 //-------------------------------------------------------------------
@@ -223,16 +229,66 @@ double OnionSkinMask::getOnionSkinFade(int rowsDistance) {
 
 //-------------------------------------------------------------------
 
+void OnionSkinMask::setShiftTraceState(ShiftTraceState state) {
+  m_shiftTraceState = std::make_shared<const ShiftTraceState>(std::move(state));
+}
+
+//-------------------------------------------------------------------
+
+void OnionSkinMask::setShiftTraceStateSnapshot(
+    std::shared_ptr<const ShiftTraceState> snapshot) {
+  m_shiftTraceState = snapshot ? std::move(snapshot) : defaultShiftTraceState();
+}
+
+//-------------------------------------------------------------------
+
+TAffine OnionSkinMask::getShiftTraceGhostAff(int index) const {
+  const ShiftTraceGhost *ghost =
+      m_shiftTraceState->getLayout().findGhost(index);
+  return ghost ? ghost->m_aff : TAffine();
+}
+
+//-------------------------------------------------------------------
+
 void OnionSkinMask::setShiftTraceGhostAff(int index, const TAffine &aff) {
-  assert(0 <= index && index < 2);
-  m_ghostAff[index] = aff;
+  ShiftTraceState state = *m_shiftTraceState;
+  if (ShiftTraceGhost *ghost = state.getLayout().findGhost(index)) {
+    ghost->m_aff = aff;
+    setShiftTraceState(std::move(state));
+  }
+}
+
+//-------------------------------------------------------------------
+
+TPointD OnionSkinMask::getShiftTraceGhostCenter(int index) const {
+  const ShiftTraceGhost *ghost =
+      m_shiftTraceState->getLayout().findGhost(index);
+  return ghost ? ghost->m_pivot : TPointD();
 }
 
 //-------------------------------------------------------------------
 
 void OnionSkinMask::setShiftTraceGhostCenter(int index, const TPointD &center) {
-  assert(0 <= index && index < 2);
-  m_ghostCenter[index] = center;
+  ShiftTraceState state = *m_shiftTraceState;
+  if (ShiftTraceGhost *ghost = state.getLayout().findGhost(index)) {
+    ghost->m_pivot = center;
+    setShiftTraceState(std::move(state));
+  }
+}
+
+//-------------------------------------------------------------------
+
+int OnionSkinMask::getShiftTraceGhostFrameOffset(int index) const {
+  return m_shiftTraceState->getLayout().getGhostOffset(index);
+}
+
+//-------------------------------------------------------------------
+
+void OnionSkinMask::setShiftTraceGhostFrameOffset(int index, int offset) {
+  ShiftTraceState state = *m_shiftTraceState;
+  if (!state.getLayout().findGhost(index)) return;
+  state.getLayout().setGhostOffset(index, offset);
+  setShiftTraceState(std::move(state));
 }
 
 //***************************************************************************
