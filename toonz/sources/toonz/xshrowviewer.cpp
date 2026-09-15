@@ -6,6 +6,7 @@
 #include "toonz/tscenehandle.h"
 #include "toonz/tframehandle.h"
 #include "toonz/tonionskinmaskhandle.h"
+#include "toonz/shifttraceedit.h"
 #include "xsheetdragtool.h"
 #include "toonzqt/gutil.h"
 #include "toonzqt/intfield.h"
@@ -957,8 +958,7 @@ void RowArea::drawCurrentTimeLine(QPainter &p) {
 //-----------------------------------------------------------------------------
 
 void RowArea::drawShiftTraceMarker(QPainter &p) {
-  TApp *app            = TApp::instance();
-  OnionSkinMask osMask = app->getCurrentOnionSkin()->getOnionSkinMask();
+  TApp *app = TApp::instance();
 
   TXsheet *xsh = app->getCurrentScene()->getScene()->getXsheet();
   assert(xsh);
@@ -977,8 +977,9 @@ void RowArea::drawShiftTraceMarker(QPainter &p) {
   QColor backColor((int)backPixel.r, (int)backPixel.g, (int)backPixel.b);
 
   // draw lines to ghost frames
-  int prevOffset    = osMask.getShiftTraceGhostFrameOffset(0);
-  int forwardOffset = osMask.getShiftTraceGhostFrameOffset(1);
+  ShiftTraceLayoutView layout = ShiftTraceEdit::currentLayout(app);
+  int prevOffset    = layout->getGhostOffset(ShiftTrace::kPreviousGhostId);
+  int forwardOffset = layout->getGhostOffset(ShiftTrace::kFollowingGhostId);
 
   QRect onionRect =
       m_viewer->orientation()->rect(PredefinedRect::SHIFTTRACE_DOT);
@@ -1244,25 +1245,8 @@ void RowArea::mousePressEvent(QMouseEvent *event) {
       // Reset ghosts to neighbor frames
       if (row == currentFrame)
         OnioniSkinMaskGUI::resetShiftTraceFrameOffset();
-      else {
-        OnionSkinMask osMask =
-            TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-        int prevOffset    = osMask.getShiftTraceGhostFrameOffset(0);
-        int forwardOffset = osMask.getShiftTraceGhostFrameOffset(1);
-        // Hide previous ghost
-        if (row == currentFrame + prevOffset)
-          osMask.setShiftTraceGhostFrameOffset(0, 0);
-        // Hide forward ghost
-        else if (row == currentFrame + forwardOffset)
-          osMask.setShiftTraceGhostFrameOffset(1, 0);
-        // Move previous ghost
-        else if (row < currentFrame)
-          osMask.setShiftTraceGhostFrameOffset(0, row - currentFrame);
-        // Move forward ghost
-        else
-          osMask.setShiftTraceGhostFrameOffset(1, row - currentFrame);
-        TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osMask);
-      }
+      else
+        OnioniSkinMaskGUI::toggleShiftTraceGhostAt(currentFrame, row);
       TApp::instance()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
       return;
     } else if (!CommandManager::instance()
@@ -1412,10 +1396,10 @@ void RowArea::mouseMoveEvent(QMouseEvent *event) {
             .contains(mouseInCell)) {
       m_showOnionToSet = ShiftTraceGhost;
 
-      OnionSkinMask osMask =
-          TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-      int prevOffset    = osMask.getShiftTraceGhostFrameOffset(0);
-      int forwardOffset = osMask.getShiftTraceGhostFrameOffset(1);
+      ShiftTraceLayoutView layout =
+          ShiftTraceEdit::currentLayout(TApp::instance());
+      int prevOffset    = layout->getGhostOffset(ShiftTrace::kPreviousGhostId);
+      int forwardOffset = layout->getGhostOffset(ShiftTrace::kFollowingGhostId);
       if (row == currentRow)
         m_tooltip =
             tr("Click to Reset Shift & Trace Markers to Neighbor Frames\nHold "

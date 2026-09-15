@@ -149,17 +149,6 @@ since underlying onion-skinned drawings must be visible.
   void setShiftTraceStateSnapshot(
       std::shared_ptr<const ShiftTraceState> snapshot);
 
-  // Index-based accessors over the shared layout, where the ghost id equals
-  // the legacy index (0 = previous, 1 = following).
-  TAffine getShiftTraceGhostAff(int index) const;
-  void setShiftTraceGhostAff(int index, const TAffine &aff);
-
-  TPointD getShiftTraceGhostCenter(int index) const;
-  void setShiftTraceGhostCenter(int index, const TPointD &center);
-
-  int getShiftTraceGhostFrameOffset(int index) const;
-  void setShiftTraceGhostFrameOffset(int index, int offset);
-
 private:
   using Marker = std::pair<int, double>;
   using MarkerList = std::vector<Marker>;

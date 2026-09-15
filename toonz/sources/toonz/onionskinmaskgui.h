@@ -17,6 +17,10 @@ void addOnionSkinCommand(QMenu *, bool isFilmStrip = false);
 
 void resetShiftTraceFrameOffset();
 
+//! Handles a click on the Shift and Trace marker of \p frame: hides the ghost
+//! shown there, or moves the previous / following ghost to that frame.
+void toggleShiftTraceGhostAt(int currentFrame, int frame);
+
 //=============================================================================
 // OnionSkinSwitcher
 //-----------------------------------------------------------------------------

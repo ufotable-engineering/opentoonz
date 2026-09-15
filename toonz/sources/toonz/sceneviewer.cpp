@@ -52,6 +52,7 @@
 #include "toonz/tstageobjectspline.h"
 #include "toonz/tobjecthandle.h"
 #include "toonz/tonionskinmaskhandle.h"
+#include "toonz/shifttraceedit.h"
 #include "toonz/palettecontroller.h"
 #include "toonz/tpalettehandle.h"
 #include "toonz/childstack.h"
@@ -477,13 +478,10 @@ class TResetShiftTraceCommand final : public MenuItemHandler {
 public:
   TResetShiftTraceCommand() : MenuItemHandler(MI_ResetShift) {}
   void execute() override {
-    OnionSkinMask osm =
-        TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-    osm.setShiftTraceGhostCenter(0, TPointD());
-    osm.setShiftTraceGhostCenter(1, TPointD());
-    osm.setShiftTraceGhostAff(0, TAffine());
-    osm.setShiftTraceGhostAff(1, TAffine());
-    TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osm);
+    ShiftTraceEdit::editCurrentLayout(
+        TApp::instance(),
+        [](ShiftTraceLayout &layout) { layout.resetTransforms(); },
+        ShiftTraceEdit::Notify::None);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     TTool *tool = TApp::instance()->getCurrentTool()->getTool();
     if (tool) tool->reset();

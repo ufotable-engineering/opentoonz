@@ -3,6 +3,7 @@
 #include "onionskinmaskgui.h"
 #include "tapp.h"
 #include "toonz/tonionskinmaskhandle.h"
+#include "toonz/shifttraceedit.h"
 #include "toonz/tframehandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/txsheethandle.h"
@@ -153,13 +154,42 @@ void OnioniSkinMaskGUI::addOnionSkinCommand(QMenu *menu, bool isFilmStrip) {
 
 //------------------------------------------------------------------------------
 
+void OnioniSkinMaskGUI::toggleShiftTraceGhostAt(int currentFrame, int frame) {
+  ShiftTraceEdit::editCurrentLayout(
+      TApp::instance(),
+      [=](ShiftTraceLayout &layout) {
+        int prevOffset = layout.getGhostOffset(ShiftTrace::kPreviousGhostId);
+        int forwardOffset =
+            layout.getGhostOffset(ShiftTrace::kFollowingGhostId);
+        // Hide previous ghost
+        if (frame == currentFrame + prevOffset)
+          layout.setGhostOffset(ShiftTrace::kPreviousGhostId, 0);
+        // Hide forward ghost
+        else if (frame == currentFrame + forwardOffset)
+          layout.setGhostOffset(ShiftTrace::kFollowingGhostId, 0);
+        // Move previous ghost
+        else if (frame < currentFrame)
+          layout.setGhostOffset(ShiftTrace::kPreviousGhostId,
+                                frame - currentFrame);
+        // Move forward ghost
+        else
+          layout.setGhostOffset(ShiftTrace::kFollowingGhostId,
+                                frame - currentFrame);
+      },
+      ShiftTraceEdit::Notify::None);
+}
+
+//------------------------------------------------------------------------------
+
 void OnioniSkinMaskGUI::resetShiftTraceFrameOffset() {
   auto setGhostOffset = [](int firstOffset, int secondOffset) {
-    OnionSkinMask osm =
-        TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-    osm.setShiftTraceGhostFrameOffset(0, firstOffset);
-    osm.setShiftTraceGhostFrameOffset(1, secondOffset);
-    TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osm);
+    ShiftTraceEdit::editCurrentLayout(
+        TApp::instance(),
+        [=](ShiftTraceLayout &layout) {
+          layout.setGhostOffset(ShiftTrace::kPreviousGhostId, firstOffset);
+          layout.setGhostOffset(ShiftTrace::kFollowingGhostId, secondOffset);
+        },
+        ShiftTraceEdit::Notify::None);
   };
 
   TApp *app = TApp::instance();

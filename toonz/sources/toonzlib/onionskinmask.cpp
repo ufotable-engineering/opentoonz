@@ -240,57 +240,6 @@ void OnionSkinMask::setShiftTraceStateSnapshot(
   m_shiftTraceState = snapshot ? std::move(snapshot) : defaultShiftTraceState();
 }
 
-//-------------------------------------------------------------------
-
-TAffine OnionSkinMask::getShiftTraceGhostAff(int index) const {
-  const ShiftTraceGhost *ghost =
-      m_shiftTraceState->getLayout().findGhost(index);
-  return ghost ? ghost->m_aff : TAffine();
-}
-
-//-------------------------------------------------------------------
-
-void OnionSkinMask::setShiftTraceGhostAff(int index, const TAffine &aff) {
-  ShiftTraceState state = *m_shiftTraceState;
-  if (ShiftTraceGhost *ghost = state.getLayout().findGhost(index)) {
-    ghost->m_aff = aff;
-    setShiftTraceState(std::move(state));
-  }
-}
-
-//-------------------------------------------------------------------
-
-TPointD OnionSkinMask::getShiftTraceGhostCenter(int index) const {
-  const ShiftTraceGhost *ghost =
-      m_shiftTraceState->getLayout().findGhost(index);
-  return ghost ? ghost->m_pivot : TPointD();
-}
-
-//-------------------------------------------------------------------
-
-void OnionSkinMask::setShiftTraceGhostCenter(int index, const TPointD &center) {
-  ShiftTraceState state = *m_shiftTraceState;
-  if (ShiftTraceGhost *ghost = state.getLayout().findGhost(index)) {
-    ghost->m_pivot = center;
-    setShiftTraceState(std::move(state));
-  }
-}
-
-//-------------------------------------------------------------------
-
-int OnionSkinMask::getShiftTraceGhostFrameOffset(int index) const {
-  return m_shiftTraceState->getLayout().getGhostOffset(index);
-}
-
-//-------------------------------------------------------------------
-
-void OnionSkinMask::setShiftTraceGhostFrameOffset(int index, int offset) {
-  ShiftTraceState state = *m_shiftTraceState;
-  if (!state.getLayout().findGhost(index)) return;
-  state.getLayout().setGhostOffset(index, offset);
-  setShiftTraceState(std::move(state));
-}
-
 //***************************************************************************
 //    OnionSkinMaskModifier  implementation
 //***************************************************************************

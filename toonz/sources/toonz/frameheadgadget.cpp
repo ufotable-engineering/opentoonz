@@ -9,6 +9,7 @@
 #include "tapp.h"
 #include "toonz/tscenehandle.h"
 #include "toonz/tonionskinmaskhandle.h"
+#include "toonz/shifttraceedit.h"
 #include "onionskinmaskgui.h"
 
 #include "filmstrip.h"
@@ -507,12 +508,10 @@ void FilmstripFrameHeadGadget::drawShiftTraceMarker(QPainter &p) {
   QColor frontColor((int)frontPixel.r, (int)frontPixel.g, (int)frontPixel.b);
   QColor backColor((int)backPixel.r, (int)backPixel.g, (int)backPixel.b);
 
-  OnionSkinMask osMask =
-      TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-
   // draw lines to ghost frames
-  int prevOffset    = osMask.getShiftTraceGhostFrameOffset(0);
-  int forwardOffset = osMask.getShiftTraceGhostFrameOffset(1);
+  ShiftTraceLayoutView layout = ShiftTraceEdit::currentLayout(TApp::instance());
+  int prevOffset    = layout->getGhostOffset(ShiftTrace::kPreviousGhostId);
+  int forwardOffset = layout->getGhostOffset(ShiftTrace::kFollowingGhostId);
 
   const int shiftTraceDotSize    = 12;
   const int shiftTraceDotXOffset = 3;
@@ -896,25 +895,8 @@ bool FilmstripFrameHeadGadget::shiftTraceEventFilter(QObject *obj, QEvent *e) {
         OnioniSkinMaskGUI::resetShiftTraceFrameOffset();
       else
         return false;
-    } else {
-      OnionSkinMask osMask =
-          TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-      int prevOffset    = osMask.getShiftTraceGhostFrameOffset(0);
-      int forwardOffset = osMask.getShiftTraceGhostFrameOffset(1);
-      // Hide previous ghost
-      if (frame == currentFrame + prevOffset)
-        osMask.setShiftTraceGhostFrameOffset(0, 0);
-      // Hide forward ghost
-      else if (frame == currentFrame + forwardOffset)
-        osMask.setShiftTraceGhostFrameOffset(1, 0);
-      // Move previous ghost
-      else if (frame < currentFrame)
-        osMask.setShiftTraceGhostFrameOffset(0, frame - currentFrame);
-      // Move forward ghost
-      else
-        osMask.setShiftTraceGhostFrameOffset(1, frame - currentFrame);
-      TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osMask);
-    }
+    } else
+      OnioniSkinMaskGUI::toggleShiftTraceGhostAt(currentFrame, frame);
     TApp::instance()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
     return true;
   }
@@ -932,10 +914,10 @@ bool FilmstripFrameHeadGadget::shiftTraceEventFilter(QObject *obj, QEvent *e) {
       }
     } else {
       m_highlightedghostFrame = frame;
-      OnionSkinMask osMask =
-          TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-      int prevOffset    = osMask.getShiftTraceGhostFrameOffset(0);
-      int forwardOffset = osMask.getShiftTraceGhostFrameOffset(1);
+      ShiftTraceLayoutView layout =
+          ShiftTraceEdit::currentLayout(TApp::instance());
+      int prevOffset    = layout->getGhostOffset(ShiftTrace::kPreviousGhostId);
+      int forwardOffset = layout->getGhostOffset(ShiftTrace::kFollowingGhostId);
       // Hide ghost
       if (frame == currentFrame + prevOffset)
         viewer->setToolTip(
