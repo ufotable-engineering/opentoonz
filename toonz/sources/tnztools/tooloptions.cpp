@@ -55,6 +55,7 @@
 #include <QToolBar>
 #include <QDockWidget>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
@@ -2735,8 +2736,7 @@ void StylePickerToolOptionsBox::updateRealTimePickLabel(const int ink,
 // ShiftTraceToolOptionBox
 //-----------------------------------------------------------------------------
 
-ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool,
-                                                 ToolHandle *toolHandle)
+ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
     : ToolOptionsBox(parent), m_tool(tool) {
   setFrameStyle(QFrame::StyledPanel);
   setFixedHeight(26);
@@ -2768,12 +2768,6 @@ ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool,
   m_layout->addWidget(m_afterFrame, 0);
   m_layout->addWidget(m_afterRadioBtn, 0);
   m_layout->addWidget(m_resetAfterGhostBtn, 0);
-
-  if (tool && tool->getProperties(0)) {
-    m_layout->addWidget(new DVGui::Separator("", this, false));
-    ToolOptionControlBuilder builder(this, tool, 0, toolHandle);
-    tool->getProperties(0)->accept(builder);
-  }
 
   m_layout->addStretch(1);
 
@@ -2838,8 +2832,6 @@ void ShiftTraceToolOptionBox::updateColors() {
 }
 
 void ShiftTraceToolOptionBox::updateStatus() {
-  ToolOptionsBox::updateStatus();
-
   TTool::Application *app = TTool::getApplication();
   OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
   if (osm.getShiftTraceGhostAff(0).isIdentity() &&
@@ -2873,6 +2865,124 @@ void ShiftTraceToolOptionBox::onAfterRadioBtnClicked() {
   ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
   if (!stTool) return;
   stTool->setCurrentGhostIndex(1);
+}
+
+//=============================================================================
+// ShiftTraceSettingsPane
+//-----------------------------------------------------------------------------
+// T_ShiftTrace binds one instance for every target type, so any target
+// resolves to the same tool and the same properties
+
+ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
+    : QFrame(parent)
+    , m_tool(TTool::getTool("T_ShiftTrace", TTool::ToonzImage))
+    , m_snapRatioProp(0) {
+  QVBoxLayout *layout = new QVBoxLayout(this);
+  layout->setContentsMargins(8, 8, 8, 8);
+  layout->setSpacing(6);
+
+  TPropertyGroup *pg     = m_tool->getProperties(0);
+  ToolHandle *toolHandle = TTool::getApplication()->getCurrentTool();
+
+  m_snapRatioProp =
+      dynamic_cast<TStringProperty *>(pg->getProperty("Snap Ratio"));
+  if (m_snapRatioProp) {
+    layout->addWidget(new QLabel(m_snapRatioProp->getQStringName(), this), 0);
+
+    QHBoxLayout *ratioLayout = new QHBoxLayout;
+    ratioLayout->setContentsMargins(0, 0, 0, 0);
+    ratioLayout->setSpacing(4);
+    for (const QString &preset : {QString("1/2"), QString("1/3")}) {
+      QPushButton *btn = new QPushButton(preset, this);
+      btn->setCheckable(true);
+      btn->setFixedHeight(21);
+      btn->setMinimumWidth(fontMetrics().horizontalAdvance(preset) + 16);
+      btn->setFocusPolicy(Qt::NoFocus);
+      connect(btn, SIGNAL(clicked(bool)), this, SLOT(onSnapPresetClicked()));
+      ratioLayout->addWidget(btn, 0);
+      m_snapPresetBtns.push_back(btn);
+    }
+    ToolOptionTextField *field =
+        new ToolOptionTextField(m_tool, m_snapRatioProp, toolHandle);
+    field->setFixedWidth(60);
+    ratioLayout->addWidget(field, 0);
+    ratioLayout->addStretch(1);
+    layout->addLayout(ratioLayout);
+    m_controls.push_back(field);
+  }
+
+  for (int i = 0; i < pg->getPropertyCount(); i++) {
+    TBoolProperty *bp = dynamic_cast<TBoolProperty *>(pg->getProperty(i));
+    if (!bp) continue;
+    ToolOptionCheckbox *cb = new ToolOptionCheckbox(m_tool, bp, toolHandle);
+    layout->addWidget(cb, 0);
+    m_controls.push_back(cb);
+  }
+
+  layout->addStretch(1);
+}
+
+//-----------------------------------------------------------------------------
+
+ShiftTraceSettingsPane::~ShiftTraceSettingsPane() {
+  TPropertyGroup *pg = m_tool->getProperties(0);
+  // The tool is a singleton that outlives this panel, so a control left
+  // registered as a property listener would dangle
+  for (int i = 0; i < pg->getPropertyCount(); i++)
+    for (ToolOptionControl *control : m_controls)
+      pg->getProperty(i)->removeListener(control);
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::showEvent(QShowEvent *) {
+  ToolHandle *currTool = TTool::getApplication()->getCurrentTool();
+  currTool->disconnect(this);
+  onToolSwitched();
+  connect(currTool, SIGNAL(toolSwitched()), this, SLOT(onToolSwitched()));
+  connect(currTool, SIGNAL(toolChanged()), this, SLOT(updateStatus()));
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::hideEvent(QHideEvent *) {
+  TTool::getApplication()->getCurrentTool()->disconnect(this);
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::onToolSwitched() {
+  ToolHandle *currTool = TTool::getApplication()->getCurrentTool();
+  // Holding space swaps in the hand tool; greying out for that would flicker
+  if (currTool->isViewerNavigationToolSelected()) return;
+
+  bool isShiftTrace = currTool->getTool() == m_tool;
+  setEnabled(isShiftTrace);
+  if (isShiftTrace) updateStatus();
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::updateStatus() {
+  for (ToolOptionControl *control : m_controls) control->updateStatus();
+  if (!m_snapRatioProp) return;
+  QString current = QString::fromStdWString(m_snapRatioProp->getValue());
+  for (QPushButton *btn : m_snapPresetBtns)
+    btn->setChecked(btn->text() == current);
+}
+
+//-----------------------------------------------------------------------------
+// Clicking the active preset clears the snap so the buttons also act as an
+// on/off toggle
+
+void ShiftTraceSettingsPane::onSnapPresetClicked() {
+  QPushButton *btn = qobject_cast<QPushButton *>(sender());
+  if (!btn) return;
+  std::wstring value = btn->text().toStdWString();
+  if (m_snapRatioProp->getValue() == value) value = L"";
+  m_snapRatioProp->setValue(value);
+  m_tool->onPropertyChanged(m_snapRatioProp->getName());
+  updateStatus();
 }
 
 //=============================================================================
@@ -3096,7 +3206,7 @@ void ToolOptions::onToolSwitched() {
         panel = new StylePickerToolOptionsBox(0, tool, currPalette, currTool,
                                               app->getPaletteController());
       else if (tool->getName() == "T_ShiftTrace")
-        panel = new ShiftTraceToolOptionBox(this, tool, currTool);
+        panel = new ShiftTraceToolOptionBox(this, tool);
       else if (tool->getName() == T_Zoom)
         panel = new ZoomToolOptionsBox(0, tool, currPalette, currTool);
       else if (tool->getName() == T_Rotate)

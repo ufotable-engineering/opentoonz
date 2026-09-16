@@ -15,6 +15,8 @@
 #endif
 #include "tenv.h"
 #include "cellselection.h"
+#include "floatingpanelcommand.h"
+#include "pane.h"
 
 // TnzTools includes
 #include "tools/cursors.h"
@@ -403,6 +405,26 @@ public:
 
 //=============================================================================
 
+namespace {
+
+void openShiftTraceSettingsPanel() {
+  // getOrOpenFloatingPanel() ignores docked panels and re-centers a floating
+  // one that is already on screen, so a visible instance is handled here
+  if (TMainWindow *room = TApp::instance()->getCurrentRoom()) {
+    for (TPanel *panel : room->findChildren<TPanel *>()) {
+      if (panel->getPanelType() != "ShiftTraceSettings" || panel->isHidden())
+        continue;
+      panel->raise();
+      return;
+    }
+  }
+  OpenFloatingPanel::getOrOpenFloatingPanel("ShiftTraceSettings");
+}
+
+}  // namespace
+
+//=============================================================================
+
 class TShiftTraceToggleCommand final : public MenuItemHandler {
   CommandId m_cmdId;
 
@@ -420,8 +442,10 @@ public:
       if (checked) {
         OnioniSkinMaskGUI::resetShiftTraceFrameOffset();
         // activate edit shift
-        if (isChecked(MI_EditShift))
+        if (isChecked(MI_EditShift)) {
           TApp::instance()->getCurrentTool()->setPseudoTool("T_ShiftTrace");
+          openShiftTraceSettingsPanel();
+        }
       } else {
         // deactivate edit shift
         if (isChecked(MI_EditShift))
@@ -436,6 +460,7 @@ public:
             CommandManager::instance()->getAction(MI_NoShift);
         if (noShiftAction) noShiftAction->setChecked(false);
         TApp::instance()->getCurrentTool()->setPseudoTool("T_ShiftTrace");
+        openShiftTraceSettingsPanel();
       } else {
         TApp::instance()->getCurrentTool()->unsetPseudoTool();
       }
