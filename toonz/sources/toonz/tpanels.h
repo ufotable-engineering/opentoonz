@@ -29,6 +29,7 @@ class ComboViewerPanel;
 class SceneViewerPanel;
 class FxSettings;
 class VectorGuidedDrawingPane;
+class ShiftTraceSettingsPane;
 class FxSelection;
 class StageObjectSelection;
 class LocatorPopup;
@@ -346,6 +347,17 @@ class VectorGuidedDrawingPanel final : public TPanel {
 
 public:
   VectorGuidedDrawingPanel(QWidget *parent);
+};
+
+//=========================================================
+// ShiftTraceSettingsPanel
+//---------------------------------------------------------
+
+class ShiftTraceSettingsPanel final : public TPanel {
+  Q_OBJECT
+
+public:
+  ShiftTraceSettingsPanel(QWidget *parent);
 };
 
 //=========================================================

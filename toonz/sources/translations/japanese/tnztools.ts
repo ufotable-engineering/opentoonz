@@ -1369,6 +1369,18 @@ Do you want to proceed?</source>
         <translation>交点にスナップ</translation>
     </message>
     <message>
+        <source>Straight Trajectory</source>
+        <translation>軌道を直線にする</translation>
+    </message>
+    <message>
+        <source>Rotate Along Arc</source>
+        <translation>回転を追従</translation>
+    </message>
+    <message>
+        <source>Snap Ratio</source>
+        <translation>ツメ指定</translation>
+    </message>
+    <message>
         <source>Sort Vector Strokes With Palette Order Level : %1 Frame : %2</source>
         <translation>パレット順にベクター線の重ね順を並べ替え&#x3000;レベル：%1&#x3000;フレーム：%2</translation>
     </message>

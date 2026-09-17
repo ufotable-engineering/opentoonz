@@ -303,6 +303,7 @@
         <command>MI_OpenToolOptionBar</command>
         <command>MI_OpenBrushPresetPanel</command>
         <command>MI_OpenToolPropertiesPanel</command>
+        <command>MI_OpenShiftTraceSettings</command>
         <separator/>
         <command>MI_OpenStyleControl</command>
         <command>MI_OpenPalette</command>

@@ -8023,6 +8023,10 @@ or you may delete necessary files for it.</source>
         <translation>ツールオプション（パネル）(&amp;T)</translation>
     </message>
     <message>
+        <source>&amp;Shift and Trace Settings</source>
+        <translation>シフト＆トレース設定 (&amp;S)</translation>
+    </message>
+    <message>
         <source>Zoom View</source>
         <translation>ズーム（押下時）</translation>
     </message>
@@ -14256,6 +14260,10 @@ OpenToonzが連番を正しく認識するためには、レベル名と動画�
     <message>
         <source>Tool Properties</source>
         <translation>ツールオプション（パネル）</translation>
+    </message>
+    <message>
+        <source>Shift and Trace Settings</source>
+        <translation>シフト＆トレース設定</translation>
     </message>
     <message>
         <source>The specified name is already assigned to the folder.</source>
