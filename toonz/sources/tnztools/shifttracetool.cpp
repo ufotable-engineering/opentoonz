@@ -35,6 +35,18 @@ TEnv::IntVar ShiftTraceStraightTrajectory("ShiftTraceToolStraightTrajectory",
                                           0);
 TEnv::IntVar ShiftTraceRotateAlongArc("ShiftTraceToolRotateAlongArc", 0);
 
+namespace {
+
+// Every division draws a dot on the trajectory each frame, so an unbounded
+// denominator would stall the viewer
+const int kMaxSnapDivision = 64;
+
+// getGadget() prefers p0/p1 on overlap, so a p2 placed exactly on an end
+// point could no longer be grabbed
+const double kMinTrajectoryRatio = 0.05;
+
+}  // namespace
+
 //=============================================================================
 
 static bool circumCenter(TPointD &out, const TPointD &a, const TPointD &b,
@@ -243,7 +255,8 @@ double ShiftTraceTool::trajectoryRatio(const TPointD &pos) const {
     TPointD d   = m_p1 - m_p0;
     double len2 = d * d;
     if (len2 <= 0) return 0.5;
-    return tcrop(((pos - m_p0) * d) / len2, 0.0, 1.0);
+    return tcrop(((pos - m_p0) * d) / len2, kMinTrajectoryRatio,
+                 1.0 - kMinTrajectoryRatio);
   }
   double angle     = atan(pos - t.center);
   double travelled = t.sweep > 0 ? fmod(angle - t.angle0 + M_2PI, M_2PI)
@@ -252,7 +265,7 @@ double ShiftTraceTool::trajectoryRatio(const TPointD &pos) const {
   // Beyond p1 the position is on the complementary arc: pick the nearer end
   if (ratio > 1.0)
     ratio = (ratio - 1.0 < M_2PI / fabs(t.sweep) - ratio) ? 1 : 0;
-  return ratio;
+  return tcrop(ratio, kMinTrajectoryRatio, 1.0 - kMinTrajectoryRatio);
 }
 
 // End points are excluded: they are the keys themselves, not inbetweens
@@ -280,7 +293,8 @@ void ShiftTraceTool::parseSnapRatio() {
     num = parts[0].trimmed().toInt(&okNum);
     den = parts[1].trimmed().toInt(&okDen);
   }
-  if (!okNum || !okDen || den < 2 || num < 0 || num >= den) {
+  if (!okNum || !okDen || den < 2 || den > kMaxSnapDivision || num < 0 ||
+      num >= den) {
     m_snapDivision  = 0;
     m_snapNumerator = 0;
     m_snapRatio.setValue(L"");
