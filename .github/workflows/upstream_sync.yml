@@ -1,0 +1,97 @@
+name: Upstream Sync
+
+# Opens (or refreshes) a pull request that brings opentoonz/opentoonz master
+# into integration. Nothing is merged automatically: conflicts and the revert
+# of in-house changes that landed upstream are left to the reviewer.
+
+on:
+  schedule:
+    - cron: '0 21 * * *'  # 06:00 JST
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # Pushes and pull requests made with GITHUB_TOKEN do not start other
+      # workflows, so the sync acts as an organization-owned GitHub App instead
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@v6
+        with:
+          ref: integration
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/opentoonz/opentoonz.git
+          git fetch upstream master
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          if git merge-base --is-ancestor upstream/master origin/integration; then
+            echo "No upstream commits missing from integration"
+            echo "uptodate=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror master
+        if: steps.check.outputs.uptodate != 'true'
+        run: git push origin upstream/master:refs/heads/master
+
+      # A reviewer may have merged integration into sync/upstream to resolve
+      # conflicts, so the branch is advanced rather than reset
+      - name: Update sync branch
+        if: steps.check.outputs.uptodate != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin sync/upstream >/dev/null; then
+            git checkout -B sync/upstream origin/sync/upstream
+            git merge --no-edit upstream/master
+          else
+            git checkout -B sync/upstream upstream/master
+          fi
+          git push origin sync/upstream
+
+      - name: Open or update pull request
+        if: steps.check.outputs.uptodate != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          {
+            echo "## なぜ"
+            echo
+            echo "本家 (opentoonz/opentoonz) の master に integration 未取り込みのコミットがある。"
+            echo
+            echo "## なにを"
+            echo
+            echo "本家 master \`$(git rev-parse --short upstream/master)\` を integration にマージする。"
+            echo
+            echo "## 取り込むコミット"
+            echo
+            git log --first-parent --format='- %s' origin/integration..upstream/master | head -50
+            echo
+            echo "## マージ前の確認"
+            echo
+            echo "- [ ] 衝突がある場合は \`sync/upstream\` に integration をマージして解消する (衝突時は本家側を採用)"
+            echo "- [ ] 本家にマージ済みの社内 PR があれば、そのマージコミットを先に revert する"
+            echo "- [ ] Windows ビルドが通っている"
+          } > body.md
+          number=$(gh pr list --head sync/upstream --base integration --state open --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file body.md
+          else
+            gh pr create --base integration --head sync/upstream \
+              --title "Merge upstream master as of $(TZ=Asia/Tokyo date +%Y-%m-%d)" \
+              --body-file body.md
+          fi
