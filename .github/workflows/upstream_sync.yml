@@ -11,6 +11,8 @@ on:
 
 permissions: {}
 
+concurrency: upstream-sync
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -49,24 +51,33 @@ jobs:
         run: git push origin upstream/master:refs/heads/master
 
       # A reviewer may have merged integration into sync/upstream to resolve
-      # conflicts, so the branch is advanced rather than reset
+      # conflicts, so the branch is advanced rather than reset. If that merge
+      # conflicts again the branch is left as is and the PR body says so; the
+      # pull request itself cannot show a conflict against upstream
       - name: Update sync branch
+        id: sync
         if: steps.check.outputs.uptodate != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          conflict=false
           if git ls-remote --exit-code --heads origin sync/upstream >/dev/null; then
             git checkout -B sync/upstream origin/sync/upstream
-            git merge --no-edit upstream/master
+            if ! git merge --no-edit upstream/master; then
+              git merge --abort
+              conflict=true
+            fi
           else
             git checkout -B sync/upstream upstream/master
           fi
           git push origin sync/upstream
+          echo "conflict=$conflict" >> "$GITHUB_OUTPUT"
 
       - name: Open or update pull request
         if: steps.check.outputs.uptodate != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          CONFLICT: ${{ steps.sync.outputs.conflict }}
         run: |
           {
             echo "## なぜ"
@@ -77,6 +88,11 @@ jobs:
             echo
             echo "本家 master \`$(git rev-parse --short upstream/master)\` を integration にマージする。"
             echo
+            if [ "$CONFLICT" = true ]; then
+              echo "> [!WARNING]"
+              echo "> \`sync/upstream\` への本家 master の自動 merge が衝突した。手元で \`sync/upstream\` に本家 master をマージして解消し、push してから再実行する。"
+              echo
+            fi
             echo "## 取り込むコミット"
             echo
             git log --first-parent --format='- %s' origin/integration..upstream/master | head -50
@@ -95,3 +111,4 @@ jobs:
               --title "Merge upstream master as of $(TZ=Asia/Tokyo date +%Y-%m-%d)" \
               --body-file body.md
           fi
+          [ "$CONFLICT" != true ]
