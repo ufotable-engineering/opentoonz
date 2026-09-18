@@ -472,6 +472,8 @@ else()
     #)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/inhouse.cmake)
+
 if(WITH_TRANSLATION)
     add_translation(toonz ${HEADERS} ${SOURCES})
     add_compile_translations_command(OpenToonz toonz)

@@ -4,6 +4,7 @@
 #include "customhelplink.h"
 
 // Tnz6 includes
+#include "inhouseversion.h"
 #include "menubar.h"
 #include "menubarcommandids.h"
 #include "xsheetviewer.h"
@@ -1774,6 +1775,7 @@ void MainWindow::checkForUpdates() {
   // Since there is only a single version of Opentoonz, we can do a simple check
   // against a string
   QString updateUrl("http://opentoonz.github.io/opentoonz-version.txt");
+  if (InhouseVersion::isEnabled()) updateUrl = InhouseVersion::versionFileUrl();
 
   m_updateChecker = new UpdateChecker(updateUrl);
   connect(m_updateChecker, SIGNAL(done(bool)), this,
@@ -1787,11 +1789,17 @@ void MainWindow::onUpdateCheckerDone(bool error) {
     return;
   }
 
-  int const software_version =
-      get_version_code_from(TEnv::getApplicationVersion());
-  int const latest_version =
-      get_version_code_from(m_updateChecker->getLatestVersion().toStdString());
-  if (software_version < latest_version) {
+  bool outdated;
+  if (InhouseVersion::isEnabled())
+    outdated = InhouseVersion::isNewer(m_updateChecker->getLatestVersion());
+  else {
+    int const software_version =
+        get_version_code_from(TEnv::getApplicationVersion());
+    int const latest_version = get_version_code_from(
+        m_updateChecker->getLatestVersion().toStdString());
+    outdated = software_version < latest_version;
+  }
+  if (outdated) {
     QStringList buttons;
     buttons.push_back(QObject::tr("Visit Web Site"));
     buttons.push_back(QObject::tr("Cancel"));
@@ -1807,7 +1815,10 @@ void MainWindow::onUpdateCheckerDone(bool error) {
     dialog->deleteLater();
     if (ret == 1) {
       // Write the new last date to file
-      QDesktopServices::openUrl(QObject::tr("https://opentoonz.github.io/e/"));
+      QString siteUrl = QObject::tr("https://opentoonz.github.io/e/");
+      if (InhouseVersion::isEnabled())
+        siteUrl = InhouseVersion::releasePageUrl();
+      QDesktopServices::openUrl(siteUrl);
     }
   }
 

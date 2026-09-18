@@ -11,6 +11,7 @@
 #include "filebrowsermodel.h"
 #include "expressionreferencemanager.h"
 #include "thirdparty.h"
+#include "inhouseversion.h"
 
 // TnzTools includes
 #include "tools/tool.h"
@@ -509,6 +510,7 @@ int main(int argc, char *argv[]) {
 
   // Toonz environment
   initToonzEnv(argumentPathValues);
+  InhouseVersion::applyToEnv();
 
   // prepare for 30bit display
   if (Preferences::instance()->is30bitDisplayEnabled()) {

@@ -1,7 +1,9 @@
 name: Windows Build
 
+# Pushes to integration queue up instead of running in parallel so that two
+# merges cannot pick the same release number
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.head_ref != '' }}
 
 on:
@@ -24,6 +26,9 @@ on:
       - '!doc/**'
       - '!**/.github/**'
       - '.github/workflows/workflow_windows.yml'
+
+permissions:
+  contents: write
 
 jobs:
   Windows:
@@ -48,6 +53,27 @@ jobs:
       - uses: actions/checkout@v6
         with:
           lfs: false
+
+      # N follows the highest existing release of the month rather than the
+      # count, so a deleted tag is never reused
+      - name: Resolve in-house version
+        id: ver
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/integration') {
+            $jst = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date).ToUniversalTime(), 'Tokyo Standard Time')
+            $month = $jst.ToString('yyyy.MM')
+            $max = 0
+            git ls-remote --tags origin "refs/tags/integration-$month.*" | ForEach-Object {
+              if ($_ -match "integration-$([regex]::Escape($month))\.(\d+)$") { $max = [Math]::Max($max, [int]$Matches[1]) }
+            }
+            $v = "$month.$($max + 1)"
+            "artifact=Opentoonz-Windows-$v" >> $env:GITHUB_OUTPUT
+          } else {
+            $v = 'dev'
+            "artifact=Opentoonz-Windows-$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+        shell: pwsh
 
       # Cache OpenCV and Boost libraries
       - name: Cache OpenCV and Boost
@@ -93,6 +119,8 @@ jobs:
 
       # CMake configuration step
       - name: CMake configuration
+        env:
+          INHOUSE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           @echo on
           cd thirdparty
@@ -105,7 +133,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DINHOUSE_VERSION="%INHOUSE_VERSION%"
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -152,11 +180,28 @@ jobs:
         run: |
           mkdir artifact
           xcopy toonz\build\Opentoonz artifact\ /E /H /Y
+          copy /Y toonz\build\toonz\inhouse_version.txt artifact\
         shell: cmd
 
       # Upload the generated artifact
       - name: Upload Artifact
+        if: steps.ver.outputs.version == 'dev'
         uses: actions/upload-artifact@v6
         with:
-          name: Opentoonz-${{ runner.os }}-${{ github.sha }}
+          name: ${{ steps.ver.outputs.artifact }}
           path: artifact
+
+      - name: Publish Release
+        if: steps.ver.outputs.version != 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INHOUSE_VERSION: ${{ steps.ver.outputs.version }}
+          ARTIFACT: ${{ steps.ver.outputs.artifact }}
+        run: |
+          7z a -tzip "$env:ARTIFACT.zip" .\artifact\*
+          gh release create "integration-$env:INHOUSE_VERSION" `
+            --target $env:GITHUB_SHA `
+            --title "integration $env:INHOUSE_VERSION" `
+            --generate-notes `
+            "$env:ARTIFACT.zip" artifact\inhouse_version.txt
+        shell: pwsh
