@@ -18,6 +18,12 @@ QString version();
 // window title, About dialog and crash reports show which build is running.
 void applyToEnv();
 
+QString versionFileUrl();
+QString releasePageUrl();
+
+// Always false for dev builds
+bool isNewer(const QString &latest);
+
 }  // namespace InhouseVersion
 
 #endif  // INHOUSEVERSION_INCLUDED

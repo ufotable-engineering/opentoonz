@@ -7,6 +7,8 @@ UpdateChecker::UpdateChecker(QUrl const& updateUrl)
   connect(manager_.data(), SIGNAL(finished(QNetworkReply*)), this,
           SLOT(httpRequestFinished(QNetworkReply*)));
 
+  // Both github.io (http->https) and release assets answer with a redirect
+  manager_->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
   manager_->get(QNetworkRequest(updateUrl));
 }
 
