@@ -13,6 +13,9 @@ configure_file(
     @ONLY
 )
 
+# Attached to each release so clients can compare without downloading the zip
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/inhouse_version.txt "${INHOUSE_VERSION}")
+
 target_sources(OpenToonz PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/inhouseversion.h
     ${CMAKE_CURRENT_LIST_DIR}/inhouseversion.cpp
