@@ -75,8 +75,10 @@ jobs:
 
       - name: Open or update pull request
         if: steps.check.outputs.uptodate != 'true'
+        # gh resolves the repository from a remote named upstream before origin
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
           CONFLICT: ${{ steps.sync.outputs.conflict }}
         run: |
           {
