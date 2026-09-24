@@ -5,6 +5,7 @@
 
 // Qt includes
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -103,6 +104,29 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
   if (!isAvailable()) return false;
 
   QDir dir(updateDir());
+
+  // Users may start OpenToonz again while the updater is still replacing files
+  QFileInfo inProgress(dir.filePath("in_progress"));
+  if (inProgress.exists()) {
+    if (inProgress.lastModified().secsTo(QDateTime::currentDateTime()) < 600) {
+      QMessageBox::information(
+          parent, QObject::tr("Update"),
+          QObject::tr("OpenToonz is being updated and will start "
+                      "automatically when finished."));
+      return true;
+    }
+    // Left behind by an updater that was killed
+    dir.remove("in_progress");
+  }
+
+  if (dir.exists("failed")) {
+    QMessageBox::warning(
+        parent, QObject::tr("Update"),
+        QObject::tr("The last update failed. See %1 for details.")
+            .arg(nativePath(dir.filePath("update.log"))));
+    dir.remove("failed");
+  }
+
   QString latest;
   for (const QString &name : dir.entryList({"*.zip"}, QDir::Files)) {
     QString version = QFileInfo(name).completeBaseName();
@@ -148,5 +172,12 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
                       QString::number(QCoreApplication::applicationPid()),
                       "-Exe",
                       nativePath(QCoreApplication::applicationFilePath())};
-  return QProcess::startDetached("powershell.exe", args);
+  // Created here rather than by the script so that it already exists by the
+  // time this process has exited
+  QFile marker(dir.filePath("in_progress"));
+  if (!marker.open(QIODevice::WriteOnly)) return false;
+  marker.close();
+  if (QProcess::startDetached("powershell.exe", args)) return true;
+  marker.remove();
+  return false;
 }
