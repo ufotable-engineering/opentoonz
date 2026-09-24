@@ -170,6 +170,8 @@ jobs:
           del /Q Opentoonz\*.pdb  REM Remove .pdb files
           del /Q Opentoonz\vc_redist.x64.exe REM Remove vc_redist.x64.exe file
           
+          copy /Y ..\sources\toonz\inhouse_update.ps1 Opentoonz
+
           REM Create portablestuff directory and copy stuff folder
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff

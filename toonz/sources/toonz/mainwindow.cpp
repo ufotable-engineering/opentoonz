@@ -4,6 +4,7 @@
 #include "customhelplink.h"
 
 // Tnz6 includes
+#include "inhouseupdate.h"
 #include "inhouseversion.h"
 #include "menubar.h"
 #include "menubarcommandids.h"
@@ -1799,8 +1800,12 @@ void MainWindow::onUpdateCheckerDone(bool error) {
         m_updateChecker->getLatestVersion().toStdString());
     outdated = software_version < latest_version;
   }
-  if (outdated) {
+  QString latest = m_updateChecker->getLatestVersion();
+  bool canUpdate = InhouseUpdate::isAvailable();
+  // A downloaded update was already offered, and declined, at startup
+  if (outdated && !(canUpdate && InhouseUpdate::isDownloaded(latest))) {
     QStringList buttons;
+    if (canUpdate) buttons.push_back(QObject::tr("Update on Next Launch"));
     buttons.push_back(QObject::tr("Visit Web Site"));
     buttons.push_back(QObject::tr("Cancel"));
     DVGui::MessageAndCheckboxDialog *dialog = DVGui::createMsgandCheckbox(
@@ -1813,7 +1818,9 @@ void MainWindow::onUpdateCheckerDone(bool error) {
     if (dialog->getChecked() == Qt::Unchecked)
       Preferences::instance()->setValue(latestVersionCheckEnabled, false);
     dialog->deleteLater();
-    if (ret == 1) {
+    if (canUpdate && ret == 1)
+      InhouseUpdate::download(latest);
+    else if (ret == (canUpdate ? 2 : 1)) {
       // Write the new last date to file
       QString siteUrl = QObject::tr("https://opentoonz.github.io/e/");
       if (InhouseVersion::isEnabled())
