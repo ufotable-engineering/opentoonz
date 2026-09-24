@@ -478,9 +478,10 @@ void ToolOptionPopupButton::doSetCurrentIndex(int index) {
 
 //=============================================================================
 
-ToolOptionTextField::ToolOptionTextField(TTool *tool, TStringProperty *property)
+ToolOptionTextField::ToolOptionTextField(TTool *tool, TStringProperty *property,
+                                         ToolHandle *toolHandle)
     : LineEdit()
-    , ToolOptionControl(tool, property->getName())
+    , ToolOptionControl(tool, property->getName(), toolHandle)
     , m_property(property) {
   setFixedSize(100, 23);
   m_property->addListener(this);

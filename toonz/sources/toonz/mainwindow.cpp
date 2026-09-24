@@ -2799,6 +2799,10 @@ void MainWindow::defineActions() {
   setCommandToWIP(brushPresetAct);
   setCommandToWIP(ToolPropertiesAct);
 
+  createMenuWindowsAction(MI_OpenShiftTraceSettings,
+                          QT_TR_NOOP("&Shift and Trace Settings"), "",
+                          "shift_and_trace_edit");
+
   createMenuWindowsAction(MI_AudioRecording, QT_TR_NOOP("Record Audio"),
                           "Alt+A", "recordaudio");
   createMenuWindowsAction(MI_ResetRoomLayout,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tools/tool.h"
+#include "tproperty.h"
 
 class ShiftTraceTool final : public TTool {
 public:
@@ -16,16 +17,24 @@ public:
     CurveP0Gadget,
     CurveP1Gadget,
     CurvePmGadget,
+    CurveBendPlusGadget,
+    CurveBendMinusGadget,
     MoveCenterGadget,
     RotateGadget,
     TranslateGadget,
     ScaleGadget
   };
   inline bool isCurveGadget(GadgetId id) const {
-    return CurveP0Gadget <= id && id <= CurvePmGadget;
+    return CurveP0Gadget <= id && id <= CurveBendMinusGadget;
   }
 
 private:
+  struct Trajectory {
+    bool isArc;
+    TPointD center;
+    double radius, angle0, sweep;
+  };
+
   TPointD m_oldPos, m_startPos;
   int m_ghostIndex;
   TPointD m_p0, m_p1, m_p2;
@@ -42,6 +51,27 @@ private:
 
   TAffine m_oldAff;
 
+  TPropertyGroup m_prop;
+  TBoolProperty m_straightTrajectory;
+  TBoolProperty m_rotateAlongArc;
+  TStringProperty m_snapRatio;
+  int m_snapDivision, m_snapNumerator;
+  // Trajectory shape: signed distance of the arc apex from the p0-p1 chord
+  double m_bend;
+  // Position of p2 along the trajectory (0 = p0, 1 = p1)
+  double m_ratio;
+
+  TPointD chordNormal() const;
+  TPointD arcApex() const;
+  double bendHandleOffset() const;
+  Trajectory getTrajectory() const;
+  TPointD trajectoryPoint(const Trajectory &t, double ratio) const;
+  TPointD trajectoryPoint(double ratio) const;
+  double trajectoryRatio(const TPointD &pos) const;
+  double snapRatio(double ratio) const;
+  double snapOrJump(double ratio) const;
+  void parseSnapRatio();
+
 public:
   ShiftTraceTool();
 
@@ -51,6 +81,7 @@ public:
   void updateData();
   void updateBox();
   void updateCurveAffs();
+  void updateCurveCenters();
   void updateGhost();
 
   void reset() override;
@@ -76,6 +107,10 @@ public:
   bool isEventAcceptable(QEvent *e) override;
 
   int getCursorId() const override;
+
+  TPropertyGroup *getProperties(int targetType) override { return &m_prop; }
+  bool onPropertyChanged(std::string propertyName) override;
+  void updateTranslation() override;
 
   int getCurrentGhostIndex() { return m_ghostIndex; }
   void setCurrentGhostIndex(int index);

@@ -247,7 +247,8 @@ protected:
   TStringProperty *m_property;
 
 public:
-  ToolOptionTextField(TTool *tool, TStringProperty *property);
+  ToolOptionTextField(TTool *tool, TStringProperty *property,
+                      ToolHandle *toolHandle = 0);
   void updateStatus() override;
 
 public slots:
