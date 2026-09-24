@@ -17,6 +17,8 @@ configure_file(
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/inhouse_version.txt "${INHOUSE_VERSION}")
 
 target_sources(OpenToonz PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/inhouseupdate.h
+    ${CMAKE_CURRENT_LIST_DIR}/inhouseupdate.cpp
     ${CMAKE_CURRENT_LIST_DIR}/inhouseversion.h
     ${CMAKE_CURRENT_LIST_DIR}/inhouseversion.cpp
 )
