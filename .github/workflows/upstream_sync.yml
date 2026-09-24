@@ -95,7 +95,11 @@ jobs:
             fi
             echo "## 取り込むコミット"
             echo
-            git log --first-parent --format='- %s' origin/integration..upstream/master | head -50
+            git log --first-parent --format='- %s' origin/integration..upstream/master | head -100
+            total=$(git rev-list --first-parent --count origin/integration..upstream/master)
+            if [ "$total" -gt 100 ]; then
+              echo "- ほか $((total - 100)) 件"
+            fi
             echo
             echo "## マージ前の確認"
             echo
@@ -103,12 +107,13 @@ jobs:
             echo "- [ ] 本家にマージ済みの社内 PR があれば、そのマージコミットを先に revert する"
             echo "- [ ] Windows ビルドが通っている"
           } > body.md
+          title="Merge upstream master as of $(TZ=Asia/Tokyo date +%Y-%m-%d)"
           number=$(gh pr list --head sync/upstream --base integration --state open --json number --jq '.[0].number')
           if [ -n "$number" ]; then
-            gh pr edit "$number" --body-file body.md
+            gh pr edit "$number" --title "$title" --body-file body.md
           else
             gh pr create --base integration --head sync/upstream \
-              --title "Merge upstream master as of $(TZ=Asia/Tokyo date +%Y-%m-%d)" \
+              --title "$title" \
               --body-file body.md
           fi
           [ "$CONFLICT" != true ]
