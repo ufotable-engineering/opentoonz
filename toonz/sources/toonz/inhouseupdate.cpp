@@ -1,7 +1,9 @@
 #include "inhouseupdate.h"
 
 #include "inhouseversion.h"
-#include "inhouseversion_config.h"
+
+// TnzQt includes
+#include "toonzqt/dvdialog.h"
 
 // Qt includes
 #include <QCoreApplication>
@@ -9,12 +11,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
-#include <QPushButton>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTemporaryFile>
@@ -46,15 +46,25 @@ QString nativePath(const QString &path) {
   return QDir::toNativeSeparators(path);
 }
 
-bool isProcessRunning(qint64 pid) {
+// The marker is written right after the updater starts, so a process with the
+// same PID that started later is an unrelated one that reused it
+bool isUpdaterRunning(qint64 pid, const QDateTime &markerWritten) {
 #ifdef _WIN32
   HANDLE process =
       OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, DWORD(pid));
   if (!process) return false;
-  DWORD code   = 0;
-  bool running = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+  DWORD code = 0;
+  FILETIME created, exited, kernel, user;
+  bool running = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE &&
+                 GetProcessTimes(process, &created, &exited, &kernel, &user);
   CloseHandle(process);
-  return running;
+  if (!running) return false;
+  ULARGE_INTEGER ticks;
+  ticks.LowPart  = created.dwLowDateTime;
+  ticks.HighPart = created.dwHighDateTime;
+  // FILETIME counts 100 ns ticks from 1601-01-01
+  qint64 msecs = qint64(ticks.QuadPart / 10000) - 11644473600000LL;
+  return QDateTime::fromMSecsSinceEpoch(msecs) <= markerWritten;
 #else
   return false;
 #endif
@@ -66,13 +76,17 @@ bool isProcessRunning(qint64 pid) {
 
 bool InhouseUpdate::isAvailable() {
 #ifdef _WIN32
-  if (!isReleaseVersion(InhouseVersion::version())) return false;
-  QDir dir(appDir());
-  if (!dir.exists("portablestuff") || !dir.exists(scriptName)) return false;
-  if (!dir.mkpath("update")) return false;
-  // QFileInfo::isWritable() ignores NTFS permissions, so actually try it
-  QTemporaryFile probe(updateDir() + "/probe");
-  return probe.open();
+  // Asked on launch and again after the update check
+  static const bool available = []() {
+    if (!isReleaseVersion(InhouseVersion::version())) return false;
+    QDir dir(appDir());
+    if (!dir.exists("portablestuff") || !dir.exists(scriptName)) return false;
+    if (!dir.mkpath("update")) return false;
+    // QFileInfo::isWritable() ignores NTFS permissions, so actually try it
+    QTemporaryFile probe(updateDir() + "/probe");
+    return probe.open();
+  }();
+  return available;
 #else
   return false;
 #endif
@@ -87,10 +101,7 @@ bool InhouseUpdate::isDownloaded(const QString &version) {
 //-----------------------------------------------------------------------------
 
 void InhouseUpdate::download(const QString &version) {
-  if (!isReleaseVersion(version) || !QDir().mkpath(updateDir())) return;
-
-  QUrl url(QString::fromUtf8(INHOUSE_RELEASE_URL) + "/download/integration-" +
-           version + "/Opentoonz-Windows-" + version + ".zip");
+  if (!isReleaseVersion(version)) return;
 
   QNetworkAccessManager *manager = new QNetworkAccessManager(qApp);
   manager->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -102,7 +113,8 @@ void InhouseUpdate::download(const QString &version) {
     return;
   }
 
-  QNetworkReply *reply = manager->get(QNetworkRequest(url));
+  QNetworkReply *reply = manager->get(
+      QNetworkRequest(QUrl(InhouseVersion::releaseZipUrl(version))));
   QObject::connect(reply, &QNetworkReply::readyRead,
                    [reply, file]() { file->write(reply->readAll()); });
   QObject::connect(reply, &QNetworkReply::finished, [reply, file, manager]() {
@@ -123,37 +135,38 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
 
   QDir dir(updateDir());
 
-  // Users may start OpenToonz again while the updater is still replacing files
+  // Holds the updater's PID and the version it is installing. Users may start
+  // OpenToonz again while the updater is still replacing files.
   QFile inProgress(dir.filePath("in_progress"));
   if (inProgress.open(QIODevice::ReadOnly)) {
-    qint64 pid        = inProgress.readAll().trimmed().toLongLong();
-    QDateTime started = QFileInfo(inProgress).lastModified();
+    QStringList fields = QString::fromUtf8(inProgress.readAll()).split('\n');
+    QDateTime written  = QFileInfo(inProgress).lastModified();
     inProgress.close();
-    if (isProcessRunning(pid) &&
-        started.secsTo(QDateTime::currentDateTime()) < 600) {
-      QMessageBox::information(
-          parent, QObject::tr("Update"),
-          QObject::tr("OpenToonz is being updated and will start "
-                      "automatically when finished."));
+    if (isUpdaterRunning(fields.value(0).toLongLong(), written)) {
+      DVGui::MsgBox(DVGui::INFORMATION,
+                    QObject::tr("OpenToonz is being updated and will start "
+                                "automatically when finished."),
+                    {QObject::tr("OK")}, 0, parent);
       return true;
     }
     // The updater was killed or never ran, e.g. when a group policy blocks
     // scripts. Offering the same zip again would repeat that, so drop it and
     // let the update check offer the web site again.
-    dir.remove("in_progress");
-    for (const QString &name : dir.entryList({"*.zip"}, QDir::Files))
-      dir.remove(name);
-    QMessageBox::warning(
-        parent, QObject::tr("Update"),
+    inProgress.remove();
+    QString version = fields.value(1).trimmed();
+    if (isReleaseVersion(version)) QFile::remove(zipPath(version));
+    DVGui::MsgBox(
+        DVGui::WARNING,
         QObject::tr("The last update did not finish. If this happens again, "
-                    "download the new version from the web site."));
+                    "download the new version from the web site."),
+        {QObject::tr("OK")}, 0, parent);
   }
 
   if (dir.exists("failed")) {
-    QMessageBox::warning(
-        parent, QObject::tr("Update"),
-        QObject::tr("The last update failed. See %1 for details.")
-            .arg(nativePath(dir.filePath("update.log"))));
+    DVGui::MsgBox(DVGui::WARNING,
+                  QObject::tr("The last update failed. See %1 for details.")
+                      .arg(nativePath(dir.filePath("update.log"))),
+                  {QObject::tr("OK")}, 0, parent);
     dir.remove("failed");
   }
 
@@ -171,21 +184,17 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
   }
   if (latest.isEmpty()) return false;
 
-  QMessageBox box(QMessageBox::Question, QObject::tr("Update"),
-                  QObject::tr("Version %1 has been downloaded.\nUpdate now? "
-                              "OpenToonz will restart.")
-                      .arg(latest),
-                  QMessageBox::NoButton, parent);
-  QPushButton *updateButton =
-      box.addButton(QObject::tr("Update Now"), QMessageBox::AcceptRole);
-  box.addButton(QObject::tr("Later"), QMessageBox::RejectRole);
-  box.exec();
-  if (box.clickedButton() != updateButton) return false;
+  int ret =
+      DVGui::MsgBox(QObject::tr("Version %1 has been downloaded.\nUpdate "
+                                "now? OpenToonz will restart.")
+                        .arg(latest),
+                    QObject::tr("Update Now"), QObject::tr("Later"), 0, parent);
+  if (ret != 1) return false;
 
   // Run a copy so that the updater does not replace the script it is running
-  QString script = updateDir() + "/" + scriptName;
+  QString script = dir.filePath(scriptName);
   QFile::remove(script);
-  if (!QFile::copy(appDir() + "/" + scriptName, script)) return false;
+  if (!QFile::copy(QDir(appDir()).filePath(scriptName), script)) return false;
 
   QStringList args = {"-NoProfile",
                       "-ExecutionPolicy",
@@ -208,7 +217,7 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
     return false;
   // Written here rather than by the script so that it already exists by the
   // time this process has exited. The script leaves it alone until then.
-  QFile marker(dir.filePath("in_progress"));
-  if (marker.open(QIODevice::WriteOnly)) marker.write(QByteArray::number(pid));
+  if (inProgress.open(QIODevice::WriteOnly))
+    inProgress.write(QByteArray::number(pid) + '\n' + latest.toUtf8());
   return true;
 }
