@@ -34,9 +34,8 @@ function Reset-Dir($dir) {
   New-Item -ItemType Directory -Path $dir | Out-Null
 }
 
-# The window runs its own message loop on a separate thread. Pumped from this
-# thread it would turn "Not Responding" during long steps, and Windows would
-# then offer to kill the updater halfway through.
+# Without its own message loop the window turns "Not Responding" during long
+# steps, and Windows then offers to kill the updater halfway through
 function Show-Status {
   $sync = [hashtable]::Synchronized(@{ Done = $false })
   $runspace = [runspacefactory]::CreateRunspace()

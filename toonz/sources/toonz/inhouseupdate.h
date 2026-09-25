@@ -9,8 +9,7 @@ class QWidget;
 
 // Self-update of in-house Windows portable builds. The release zip is
 // downloaded in the background and applied on the next launch by
-// inhouse_update.ps1, which replaces the program files and the files shipped
-// in portablestuff while keeping personal settings.
+// inhouse_update.ps1.
 namespace InhouseUpdate {
 
 // False unless this is a released in-house build running from a writable
