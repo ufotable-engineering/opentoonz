@@ -1,9 +1,10 @@
 name: Windows Build
 
-# Runs on integration queue up instead of running in parallel so that two
-# releases cannot pick the same number
+# Releases queue up among themselves so that two cannot pick the same number.
+# They are kept out of the integration group because a group holds only one
+# pending run, and a push arriving later would silently cancel the release.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.publish && 'publish' || github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.head_ref != '' }}
 
 on:
@@ -66,7 +67,10 @@ jobs:
         env:
           PUBLISH: ${{ inputs.publish }}
         run: |
-          if ($env:PUBLISH -eq 'true' -and $env:GITHUB_REF -eq 'refs/heads/integration') {
+          if ($env:PUBLISH -eq 'true' -and $env:GITHUB_REF -ne 'refs/heads/integration') {
+            throw 'In-house releases are published only from integration'
+          }
+          if ($env:PUBLISH -eq 'true') {
             $jst = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date).ToUniversalTime(), 'Tokyo Standard Time')
             $month = $jst.ToString('yyyy.MM')
             $max = 0
