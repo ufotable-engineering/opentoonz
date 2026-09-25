@@ -76,7 +76,6 @@ bool isUpdaterRunning(qint64 pid, const QDateTime &markerWritten) {
 
 bool InhouseUpdate::isAvailable() {
 #ifdef _WIN32
-  // Asked on launch and again after the update check
   static const bool available = []() {
     if (!isReleaseVersion(InhouseVersion::version())) return false;
     QDir dir(appDir());
