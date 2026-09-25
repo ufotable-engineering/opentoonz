@@ -20,6 +20,10 @@
 #include <QTemporaryFile>
 #include <QVersionNumber>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace {
 
 const QString scriptName("inhouse_update.ps1");
@@ -40,6 +44,20 @@ QString zipPath(const QString &version) {
 
 QString nativePath(const QString &path) {
   return QDir::toNativeSeparators(path);
+}
+
+bool isProcessRunning(qint64 pid) {
+#ifdef _WIN32
+  HANDLE process =
+      OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, DWORD(pid));
+  if (!process) return false;
+  DWORD code   = 0;
+  bool running = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+  CloseHandle(process);
+  return running;
+#else
+  return false;
+#endif
 }
 
 }  // namespace
@@ -106,17 +124,29 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
   QDir dir(updateDir());
 
   // Users may start OpenToonz again while the updater is still replacing files
-  QFileInfo inProgress(dir.filePath("in_progress"));
-  if (inProgress.exists()) {
-    if (inProgress.lastModified().secsTo(QDateTime::currentDateTime()) < 600) {
+  QFile inProgress(dir.filePath("in_progress"));
+  if (inProgress.open(QIODevice::ReadOnly)) {
+    qint64 pid        = inProgress.readAll().trimmed().toLongLong();
+    QDateTime started = QFileInfo(inProgress).lastModified();
+    inProgress.close();
+    if (isProcessRunning(pid) &&
+        started.secsTo(QDateTime::currentDateTime()) < 600) {
       QMessageBox::information(
           parent, QObject::tr("Update"),
           QObject::tr("OpenToonz is being updated and will start "
                       "automatically when finished."));
       return true;
     }
-    // Left behind by an updater that was killed
+    // The updater was killed or never ran, e.g. when a group policy blocks
+    // scripts. Offering the same zip again would repeat that, so drop it and
+    // let the update check offer the web site again.
     dir.remove("in_progress");
+    for (const QString &name : dir.entryList({"*.zip"}, QDir::Files))
+      dir.remove(name);
+    QMessageBox::warning(
+        parent, QObject::tr("Update"),
+        QObject::tr("The last update did not finish. If this happens again, "
+                    "download the new version from the web site."));
   }
 
   if (dir.exists("failed")) {
@@ -172,12 +202,13 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
                       QString::number(QCoreApplication::applicationPid()),
                       "-Exe",
                       nativePath(QCoreApplication::applicationFilePath())};
-  // Created here rather than by the script so that it already exists by the
-  // time this process has exited
+
+  qint64 pid = 0;
+  if (!QProcess::startDetached("powershell.exe", args, QString(), &pid))
+    return false;
+  // Written here rather than by the script so that it already exists by the
+  // time this process has exited. The script leaves it alone until then.
   QFile marker(dir.filePath("in_progress"));
-  if (!marker.open(QIODevice::WriteOnly)) return false;
-  marker.close();
-  if (QProcess::startDetached("powershell.exe", args)) return true;
-  marker.remove();
-  return false;
+  if (marker.open(QIODevice::WriteOnly)) marker.write(QByteArray::number(pid));
+  return true;
 }
