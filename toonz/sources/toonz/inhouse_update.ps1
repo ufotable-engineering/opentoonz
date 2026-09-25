@@ -101,8 +101,9 @@ try {
   Reset-Dir $staging
   try {
     Expand-Zip $Zip $staging
-    if (-not (Test-Path -LiteralPath (Join-Path $staging (Split-Path $Exe -Leaf)))) {
-      throw "$Zip does not contain $(Split-Path $Exe -Leaf)"
+    $exeName = Split-Path $Exe -Leaf
+    if (-not (Test-Path -LiteralPath (Join-Path $staging $exeName))) {
+      throw "$Zip does not contain $exeName"
     }
   } catch {
     # A broken zip would otherwise be offered again on every launch

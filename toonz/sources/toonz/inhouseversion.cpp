@@ -48,6 +48,13 @@ QString InhouseVersion::versionFileUrl() {
 
 //-----------------------------------------------------------------------------
 
+QString InhouseVersion::releaseZipUrl(const QString &version) {
+  return QString::fromUtf8(INHOUSE_RELEASE_URL) + "/download/integration-" +
+         version + "/Opentoonz-Windows-" + version + ".zip";
+}
+
+//-----------------------------------------------------------------------------
+
 bool InhouseVersion::isNewer(const QString &latest) {
   QVersionNumber current = calVer(version());
   return !current.isNull() && calVer(latest) > current;
