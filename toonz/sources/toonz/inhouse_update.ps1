@@ -34,19 +34,40 @@ function Reset-Dir($dir) {
   New-Item -ItemType Directory -Path $dir | Out-Null
 }
 
+# The window runs its own message loop on a separate thread. Pumped from this
+# thread it would turn "Not Responding" during long steps, and Windows would
+# then offer to kill the updater halfway through.
 function Show-Status {
-  Add-Type -AssemblyName System.Windows.Forms
-  $form = New-Object System.Windows.Forms.Form -Property @{
-    Text = 'OpenToonz'; Width = 360; Height = 120; StartPosition = 'CenterScreen'
-    FormBorderStyle = 'FixedDialog'; ControlBox = $false; TopMost = $true
-  }
-  $form.Controls.Add((New-Object System.Windows.Forms.Label -Property @{
-    Text = 'Updating OpenToonz. It will restart when finished.'
-    Dock = 'Fill'; TextAlign = 'MiddleCenter'
-  }))
-  $form.Show()
-  $form.Refresh()
-  $form
+  $sync = [hashtable]::Synchronized(@{ Done = $false })
+  $runspace = [runspacefactory]::CreateRunspace()
+  $runspace.ApartmentState = 'STA'
+  $runspace.Open()
+  $runspace.SessionStateProxy.SetVariable('sync', $sync)
+  $ps = [PowerShell]::Create()
+  $ps.Runspace = $runspace
+  $null = $ps.AddScript({
+    Add-Type -AssemblyName System.Windows.Forms
+    $form = New-Object System.Windows.Forms.Form -Property @{
+      Text = 'OpenToonz'; Width = 360; Height = 120; StartPosition = 'CenterScreen'
+      FormBorderStyle = 'FixedDialog'; ControlBox = $false; TopMost = $true
+    }
+    $form.Controls.Add((New-Object System.Windows.Forms.Label -Property @{
+      Text = 'Updating OpenToonz. It will restart when finished.'
+      Dock = 'Fill'; TextAlign = 'MiddleCenter'
+    }))
+    $timer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 200 }
+    $timer.Add_Tick({ if ($sync.Done) { $form.Close() } })
+    $timer.Start()
+    [System.Windows.Forms.Application]::Run($form)
+  })
+  @{ Sync = $sync; PowerShell = $ps; Handle = $ps.BeginInvoke() }
+}
+
+function Close-Status($status) {
+  $status.Sync.Done = $true
+  $null = $status.Handle.AsyncWaitHandle.WaitOne(5000)
+  $status.PowerShell.Runspace.Dispose()
+  $status.PowerShell.Dispose()
 }
 
 function Expand-Zip($zip, $dest) {
@@ -59,7 +80,9 @@ function Expand-Zip($zip, $dest) {
   }
 }
 
-Start-Transcript -Path (Join-Path $updateDir 'update.log') -Force | Out-Null
+# Anything that stops the script before the finally block below would leave
+# in_progress behind without restarting OpenToonz
+try { Start-Transcript -Path (Join-Path $updateDir 'update.log') -Force | Out-Null } catch { }
 $status = $null
 try {
   if ($Rollback) {
@@ -94,15 +117,20 @@ try {
     $installing = $true
     Move-ProgramItems $staging $InstallDir
   } catch {
+    $moveError = $_
     # A locked file (e.g. another running instance) stops the move halfway
-    if ($installing) { Get-ProgramItems $InstallDir | Remove-Item -Recurse -Force }
-    Move-ProgramItems $previous $InstallDir
-    throw
+    try {
+      if ($installing) { Get-ProgramItems $InstallDir | Remove-Item -Recurse -Force }
+      Move-ProgramItems $previous $InstallDir
+    } catch {
+      Write-Output "Restoring the previous version failed: $_"
+    }
+    throw $moveError
   }
 
   $stuff = Join-Path $staging 'portablestuff'
   if (Test-Path -LiteralPath $stuff) {
-    robocopy $stuff (Join-Path $InstallDir 'portablestuff') /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy $stuff (Join-Path $InstallDir 'portablestuff') /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
     # robocopy uses 8 and above for failures
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
   }
@@ -112,8 +140,11 @@ try {
   Write-Output $_
   Set-Content -LiteralPath $failed -Value $_.ToString()
 } finally {
-  if ($status) { $status.Close() }
+  if ($status) { Close-Status $status }
   if (Test-Path -LiteralPath $inProgress) { Remove-Item -LiteralPath $inProgress -Force }
-  if ($Exe) { Start-Process -FilePath $Exe -WorkingDirectory $InstallDir }
-  Stop-Transcript | Out-Null
+  # Missing when restoring the previous version failed as well
+  if ($Exe -and (Test-Path -LiteralPath $Exe)) {
+    Start-Process -FilePath $Exe -WorkingDirectory $InstallDir
+  }
+  try { Stop-Transcript | Out-Null } catch { }
 }
