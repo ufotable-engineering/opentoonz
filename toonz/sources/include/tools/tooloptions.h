@@ -753,7 +753,8 @@ protected:
   void hideEvent(QShowEvent *);
 
 public:
-  ShiftTraceToolOptionBox(QWidget *parent = 0, TTool *tool = 0);
+  ShiftTraceToolOptionBox(QWidget *parent = 0, TTool *tool = 0,
+                          ToolHandle *toolHandle = 0);
   void updateStatus() override;
 protected slots:
   void onResetPrevGhostBtnPressed();

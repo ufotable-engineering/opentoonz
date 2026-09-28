@@ -2735,7 +2735,8 @@ void StylePickerToolOptionsBox::updateRealTimePickLabel(const int ink,
 // ShiftTraceToolOptionBox
 //-----------------------------------------------------------------------------
 
-ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
+ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool,
+                                                 ToolHandle *toolHandle)
     : ToolOptionsBox(parent), m_tool(tool) {
   setFrameStyle(QFrame::StyledPanel);
   setFixedHeight(26);
@@ -2767,6 +2768,12 @@ ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
   m_layout->addWidget(m_afterFrame, 0);
   m_layout->addWidget(m_afterRadioBtn, 0);
   m_layout->addWidget(m_resetAfterGhostBtn, 0);
+
+  if (tool && tool->getProperties(0)) {
+    m_layout->addWidget(new DVGui::Separator("", this, false));
+    ToolOptionControlBuilder builder(this, tool, 0, toolHandle);
+    tool->getProperties(0)->accept(builder);
+  }
 
   m_layout->addStretch(1);
 
@@ -2831,6 +2838,8 @@ void ShiftTraceToolOptionBox::updateColors() {
 }
 
 void ShiftTraceToolOptionBox::updateStatus() {
+  ToolOptionsBox::updateStatus();
+
   TTool::Application *app = TTool::getApplication();
   OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
   if (osm.getShiftTraceGhostAff(0).isIdentity() &&
@@ -3087,7 +3096,7 @@ void ToolOptions::onToolSwitched() {
         panel = new StylePickerToolOptionsBox(0, tool, currPalette, currTool,
                                               app->getPaletteController());
       else if (tool->getName() == "T_ShiftTrace")
-        panel = new ShiftTraceToolOptionBox(this, tool);
+        panel = new ShiftTraceToolOptionBox(this, tool, currTool);
       else if (tool->getName() == T_Zoom)
         panel = new ZoomToolOptionsBox(0, tool, currPalette, currTool);
       else if (tool->getName() == T_Rotate)
