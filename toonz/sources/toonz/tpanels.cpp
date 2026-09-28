@@ -1708,6 +1708,39 @@ OpenFloatingPanel openVectorGuidedDrawingPanelCommand(
     MI_OpenGuidedDrawingControls, "VectorGuidedDrawingPanel",
     QObject::tr("Vector Guided Drawing"));
 
+//=========================================================
+// ShiftTraceSettingsPanel
+//---------------------------------------------------------
+
+ShiftTraceSettingsPanel::ShiftTraceSettingsPanel(QWidget *parent)
+    : TPanel(parent) {
+  setWidget(new ShiftTraceSettingsPane(this));
+  setIsMaximizable(false);
+}
+
+//=============================================================================
+// ShiftTraceSettingsFactory
+//-----------------------------------------------------------------------------
+
+class ShiftTraceSettingsFactory final : public TPanelFactory {
+public:
+  ShiftTraceSettingsFactory() : TPanelFactory("ShiftTraceSettings") {}
+  TPanel *createPanel(QWidget *parent) override {
+    TPanel *panel = new ShiftTraceSettingsPanel(parent);
+    panel->setObjectName(getPanelType());
+    panel->setWindowTitle(QObject::tr("Shift and Trace Settings"));
+    panel->allowMultipleInstances(false);
+    panel->setMinimumSize(230, 120);
+    return panel;
+  }
+  void initialize(TPanel *panel) override {}
+} shiftTraceSettingsFactory;
+
+//=============================================================================
+OpenFloatingPanel openShiftTraceSettingsCommand(
+    MI_OpenShiftTraceSettings, "ShiftTraceSettings",
+    QObject::tr("Shift and Trace Settings"));
+
 //-----------------------------------------------------------------------------
 
 namespace {

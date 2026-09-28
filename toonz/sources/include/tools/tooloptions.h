@@ -753,8 +753,7 @@ protected:
   void hideEvent(QShowEvent *);
 
 public:
-  ShiftTraceToolOptionBox(QWidget *parent = 0, TTool *tool = 0,
-                          ToolHandle *toolHandle = 0);
+  ShiftTraceToolOptionBox(QWidget *parent = 0, TTool *tool = 0);
   void updateStatus() override;
 protected slots:
   void onResetPrevGhostBtnPressed();
@@ -762,6 +761,35 @@ protected slots:
   void onPrevRadioBtnClicked();
   void onAfterRadioBtnClicked();
   void updateColors();
+};
+
+//=============================================================================
+//
+// ShiftTraceSettingsPane
+// contents of the "Shift and Trace Settings" floating panel
+//
+//=============================================================================
+
+class DVAPI ShiftTraceSettingsPane final : public QFrame {
+  Q_OBJECT
+
+  TTool *m_tool;
+  TStringProperty *m_snapRatioProp;
+  QList<QPushButton *> m_snapPresetBtns;
+  QList<ToolOptionControl *> m_controls;
+
+public:
+  ShiftTraceSettingsPane(QWidget *parent = 0);
+  ~ShiftTraceSettingsPane();
+
+protected:
+  void showEvent(QShowEvent *) override;
+  void hideEvent(QHideEvent *) override;
+
+protected slots:
+  void updateStatus();
+  void onToolSwitched();
+  void onSnapPresetClicked();
 };
 
 //=============================================================================

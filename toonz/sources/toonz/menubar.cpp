@@ -889,6 +889,7 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
     addMenuItem(otherWindowsMenu, MI_OpenHistoryPanel);
     addMenuItem(otherWindowsMenu, MI_OpenBrushPresetPanel);
     addMenuItem(otherWindowsMenu, MI_OpenToolPropertiesPanel);
+    addMenuItem(otherWindowsMenu, MI_OpenShiftTraceSettings);
     addMenuItem(otherWindowsMenu, MI_OpenTMessage);
   }
 
@@ -1526,6 +1527,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(windowsMenu, MI_OpenToolOptionBar);
   addMenuItem(windowsMenu, MI_OpenBrushPresetPanel);
   addMenuItem(windowsMenu, MI_OpenToolPropertiesPanel);
+  addMenuItem(windowsMenu, MI_OpenShiftTraceSettings);
   windowsMenu->addSeparator();
   addMenuItem(windowsMenu, MI_OpenStyleControl);
   addMenuItem(windowsMenu, MI_OpenPalette);
