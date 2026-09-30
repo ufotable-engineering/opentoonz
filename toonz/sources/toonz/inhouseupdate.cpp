@@ -161,12 +161,16 @@ bool InhouseUpdate::applyPendingUpdate(QWidget *parent) {
         {QObject::tr("OK")}, 0, parent);
   }
 
-  if (dir.exists("failed")) {
-    DVGui::MsgBox(DVGui::WARNING,
-                  QObject::tr("The last update failed. See %1 for details.")
-                      .arg(nativePath(dir.filePath("update.log"))),
-                  {QObject::tr("OK")}, 0, parent);
-    dir.remove("failed");
+  QFile failed(dir.filePath("failed"));
+  if (failed.open(QIODevice::ReadOnly)) {
+    QString reason = QString::fromUtf8(failed.readAll()).trimmed();
+    failed.close();
+    DVGui::MsgBox(
+        DVGui::WARNING,
+        QObject::tr("The last update failed.\n%1\n\nSee %2 for details.")
+            .arg(reason, nativePath(dir.filePath("update.log"))),
+        {QObject::tr("OK")}, 0, parent);
+    failed.remove();
   }
 
   QString latest;

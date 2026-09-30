@@ -1,7 +1,8 @@
 # Replaces an in-house portable install with the contents of a release zip.
-# Started by OpenToonz right before it quits. Like the upstream installer's
-# default, files shipped in portablestuff are overwritten and everything else
-# there, including personal settings, is kept.
+# Started by OpenToonz right before it quits. Only items the release ships are
+# replaced, so other files users keep in the install folder stay put. Like the
+# upstream installer's default, files shipped in portablestuff are overwritten
+# and everything else there, including personal settings, is kept.
 # The replaced program files are kept in update\previous, and running this
 # script with -Rollback swaps them back.
 param(
@@ -21,17 +22,42 @@ $inProgress = Join-Path $updateDir 'in_progress'
 $failed = Join-Path $updateDir 'failed'
 $kept = @('portablestuff', 'update')
 
-function Get-ProgramItems($dir) {
-  Get-ChildItem -LiteralPath $dir -Force | Where-Object { $kept -notcontains $_.Name }
+function Get-ShippedNames($dir) {
+  @(Get-ChildItem -LiteralPath $dir -Force | Where-Object { $kept -notcontains $_.Name } | ForEach-Object { $_.Name })
 }
 
-function Move-ProgramItems($from, $to) {
-  Get-ProgramItems $from | Move-Item -Destination $to
+function Move-Named($names, $from, $to) {
+  foreach ($name in $names) {
+    $item = Join-Path $from $name
+    if (Test-Path -LiteralPath $item) { Move-Item -LiteralPath $item -Destination $to }
+  }
+}
+
+function Remove-Named($names, $dir) {
+  foreach ($name in $names) {
+    $item = Join-Path $dir $name
+    if (Test-Path -LiteralPath $item) { Remove-Item -LiteralPath $item -Recurse -Force }
+  }
 }
 
 function Reset-Dir($dir) {
   if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
   New-Item -ItemType Directory -Path $dir | Out-Null
+}
+
+# Windows lets running executables be moved, so another instance would go on
+# running the old files against the new ones
+function Assert-NotRunning($dir) {
+  $prefix = $dir.TrimEnd('\') + '\'
+  $running = @(Get-Process | Where-Object {
+    # Paths of other users' processes cannot be read
+    try { $path = $_.Path } catch { $path = $null }
+    $path -and $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+  })
+  if ($running.Count -gt 0) {
+    $list = ($running | ForEach-Object { "$($_.Name) ($($_.Id))" }) -join ', '
+    throw "Close these programs and update again: $list"
+  }
 }
 
 # Without its own message loop the window turns "Not Responding" during long
@@ -86,9 +112,10 @@ $status = $null
 try {
   if ($Rollback) {
     if (-not (Test-Path -LiteralPath $previous)) { throw 'No previous version to roll back to' }
+    $names = Get-ShippedNames $previous
     Reset-Dir $staging
-    Move-ProgramItems $InstallDir $staging
-    Move-ProgramItems $previous $InstallDir
+    Move-Named $names $InstallDir $staging
+    Move-Named $names $previous $InstallDir
     Remove-Item -LiteralPath $previous -Recurse -Force
     Rename-Item -LiteralPath $staging -NewName 'previous'
     return
@@ -96,6 +123,7 @@ try {
 
   $status = Show-Status
   if ($ProcessId) { Wait-Process -Id $ProcessId -Timeout 120 -ErrorAction SilentlyContinue }
+  Assert-NotRunning $InstallDir
 
   Reset-Dir $staging
   try {
@@ -110,18 +138,19 @@ try {
     throw
   }
 
+  $names = Get-ShippedNames $staging
   Reset-Dir $previous
   $installing = $false
   try {
-    Move-ProgramItems $InstallDir $previous
+    Move-Named $names $InstallDir $previous
     $installing = $true
-    Move-ProgramItems $staging $InstallDir
+    Move-Named $names $staging $InstallDir
   } catch {
     $moveError = $_
-    # A locked file (e.g. another running instance) stops the move halfway
+    # A locked file stops the move halfway
     try {
-      if ($installing) { Get-ProgramItems $InstallDir | Remove-Item -Recurse -Force }
-      Move-ProgramItems $previous $InstallDir
+      if ($installing) { Remove-Named $names $InstallDir }
+      Move-Named $names $previous $InstallDir
     } catch {
       Write-Output "Restoring the previous version failed: $_"
     }
@@ -134,13 +163,16 @@ try {
     # robocopy uses 8 and above for failures
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
   }
-  Remove-Item -LiteralPath $staging -Recurse -Force
   Remove-Item -LiteralPath $Zip -Force
 } catch {
   Write-Output $_
-  Set-Content -LiteralPath $failed -Value $_.ToString()
+  [IO.File]::WriteAllText($failed, $_.ToString())
 } finally {
   if ($status) { Close-Status $status }
+  # A failed rollback leaves the current program files in staging
+  if (-not $Rollback -and (Test-Path -LiteralPath $staging)) {
+    try { Remove-Item -LiteralPath $staging -Recurse -Force } catch { }
+  }
   if (Test-Path -LiteralPath $inProgress) { Remove-Item -LiteralPath $inProgress -Force }
   # Missing when restoring the previous version failed as well
   if ($Exe -and (Test-Path -LiteralPath $Exe)) {
