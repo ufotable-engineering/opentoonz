@@ -3,8 +3,8 @@
 # replaced, so other files users keep in the install folder stay put. Like the
 # upstream installer's default, files shipped in portablestuff are overwritten
 # and everything else there, including personal settings, is kept.
-# The replaced program files are kept in update\previous, and running this
-# script with -Rollback swaps them back.
+# The replaced program files and the overwritten portablestuff files are kept
+# in update\previous, and running this script with -Rollback puts them back.
 param(
   [Parameter(Mandatory = $true)][string]$InstallDir,
   [string]$Zip,
@@ -20,7 +20,11 @@ $previous = Join-Path $updateDir 'previous'
 # Both markers are also read by OpenToonz on launch
 $inProgress = Join-Path $updateDir 'in_progress'
 $failed = Join-Path $updateDir 'failed'
-$kept = @('portablestuff', 'update')
+# Kept inside previous so that they never outlive the program files they belong to
+$stuffBackup = Join-Path $previous 'portablestuff'
+$stuffAdded = Join-Path $previous 'portablestuff.added'
+$installedStuff = Join-Path $InstallDir 'portablestuff'
+$kept = @('portablestuff', 'portablestuff.added', 'update')
 
 function Get-ShippedNames($dir) {
   @(Get-ChildItem -LiteralPath $dir -Force | Where-Object { $kept -notcontains $_.Name } | ForEach-Object { $_.Name })
@@ -37,6 +41,51 @@ function Remove-Named($names, $dir) {
   foreach ($name in $names) {
     $item = Join-Path $dir $name
     if (Test-Path -LiteralPath $item) { Remove-Item -LiteralPath $item -Recurse -Force }
+  }
+}
+
+# robocopy overwrites only files whose size or time differ, so those are the
+# ones saved. Files the release adds are listed so they can be removed again.
+function Save-Stuff($src) {
+  $added = @()
+  foreach ($file in Get-ChildItem -LiteralPath $src -Recurse -File -Force) {
+    $rel = $file.FullName.Substring($src.Length + 1)
+    $target = Join-Path $installedStuff $rel
+    if (-not (Test-Path -LiteralPath $target)) { $added += $rel; continue }
+    $old = Get-Item -LiteralPath $target -Force
+    if ($old.Length -eq $file.Length -and $old.LastWriteTimeUtc -eq $file.LastWriteTimeUtc) { continue }
+    $saved = Join-Path $stuffBackup $rel
+    New-Item -ItemType Directory -Path (Split-Path $saved) -Force | Out-Null
+    Copy-Item -LiteralPath $target -Destination $saved -Force
+  }
+  [IO.File]::WriteAllLines($stuffAdded, [string[]]$added)
+}
+
+function Restore-Stuff {
+  if (Test-Path -LiteralPath $stuffAdded) {
+    foreach ($rel in [IO.File]::ReadAllLines($stuffAdded)) {
+      $item = Join-Path $installedStuff $rel
+      if (Test-Path -LiteralPath $item) { Remove-Item -LiteralPath $item -Force }
+    }
+  }
+  if (Test-Path -LiteralPath $stuffBackup) { Copy-Stuff $stuffBackup }
+}
+
+function Copy-Stuff($src) {
+  robocopy $src $installedStuff /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  # robocopy uses 8 and above for failures
+  if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+}
+
+# Undoes a partial update. Without $installed only the old program files are
+# moved back, as the new ones never reached the install folder.
+function Restore-Previous($names, $installed) {
+  try {
+    if ($installed) { Remove-Named $names $InstallDir }
+    Move-Named $names $previous $InstallDir
+    Restore-Stuff
+  } catch {
+    Write-Output "Restoring the previous version failed: $_"
   }
 }
 
@@ -112,12 +161,14 @@ $status = $null
 try {
   if ($Rollback) {
     if (-not (Test-Path -LiteralPath $previous)) { throw 'No previous version to roll back to' }
+    Assert-NotRunning $InstallDir
     $names = Get-ShippedNames $previous
     Reset-Dir $staging
     Move-Named $names $InstallDir $staging
     Move-Named $names $previous $InstallDir
+    Restore-Stuff
     Remove-Item -LiteralPath $previous -Recurse -Force
-    Rename-Item -LiteralPath $staging -NewName 'previous'
+    Remove-Item -LiteralPath $staging -Recurse -Force
     return
   }
 
@@ -145,23 +196,16 @@ try {
     Move-Named $names $InstallDir $previous
     $installing = $true
     Move-Named $names $staging $InstallDir
-  } catch {
-    $moveError = $_
-    # A locked file stops the move halfway
-    try {
-      if ($installing) { Remove-Named $names $InstallDir }
-      Move-Named $names $previous $InstallDir
-    } catch {
-      Write-Output "Restoring the previous version failed: $_"
+    $stuff = Join-Path $staging 'portablestuff'
+    if (Test-Path -LiteralPath $stuff) {
+      Save-Stuff $stuff
+      Copy-Stuff $stuff
     }
-    throw $moveError
-  }
-
-  $stuff = Join-Path $staging 'portablestuff'
-  if (Test-Path -LiteralPath $stuff) {
-    robocopy $stuff (Join-Path $InstallDir 'portablestuff') /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-    # robocopy uses 8 and above for failures
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+  } catch {
+    $updateError = $_
+    # A locked file stops the move or the copy halfway
+    Restore-Previous $names $installing
+    throw $updateError
   }
   Remove-Item -LiteralPath $Zip -Force
 } catch {
