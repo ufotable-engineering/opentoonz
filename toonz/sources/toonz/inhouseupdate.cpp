@@ -73,6 +73,38 @@ bool isUpdaterRunning(qint64 pid, const QDateTime &markerWritten) {
 #endif
 }
 
+// A zip altered on the way must never reach the updater, so it is kept only
+// when it matches the hash published with the release
+void downloadZip(QNetworkAccessManager *manager, const QString &version,
+                 const QByteArray &expected) {
+  // An interrupted download must not leave a zip that looks complete
+  QSaveFile *file = new QSaveFile(zipPath(version), manager);
+  if (!file->open(QIODevice::WriteOnly)) {
+    manager->deleteLater();
+    return;
+  }
+
+  auto hash = std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
+  QNetworkReply *reply = manager->get(
+      QNetworkRequest(QUrl(InhouseVersion::releaseZipUrl(version))));
+
+  auto write = [reply, file, hash]() {
+    QByteArray data = reply->readAll();
+    hash->addData(data);
+    file->write(data);
+  };
+  QObject::connect(reply, &QNetworkReply::readyRead, write);
+  QObject::connect(reply, &QNetworkReply::finished, [=]() {
+    write();
+    if (reply->error() == QNetworkReply::NoError && hash->result() == expected)
+      file->commit();
+    else
+      file->cancelWriting();
+    reply->deleteLater();
+    manager->deleteLater();
+  });
+}
+
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -108,47 +140,18 @@ void InhouseUpdate::download(const QString &version) {
   QNetworkAccessManager *manager = new QNetworkAccessManager(qApp);
   manager->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
 
-  QString zipUrl = InhouseVersion::releaseZipUrl(version);
-  QNetworkReply *hashReply =
-      manager->get(QNetworkRequest(QUrl(zipUrl + ".sha256")));
-  QObject::connect(hashReply, &QNetworkReply::finished, [=]() {
-    hashReply->deleteLater();
-    QByteArray expected =
-        QByteArray::fromHex(hashReply->readAll().trimmed().left(64));
-    if (hashReply->error() != QNetworkReply::NoError || expected.size() != 32) {
-      manager->deleteLater();
-      return;
-    }
-
-    // An interrupted download must not leave a zip that looks complete
-    QSaveFile *file = new QSaveFile(zipPath(version), manager);
-    if (!file->open(QIODevice::WriteOnly)) {
-      manager->deleteLater();
-      return;
-    }
-
-    auto hash =
-        std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
-    QNetworkReply *reply = manager->get(QNetworkRequest(QUrl(zipUrl)));
-
-    auto write = [reply, file, hash]() {
-      QByteArray data = reply->readAll();
-      hash->addData(data);
-      file->write(data);
-    };
-    QObject::connect(reply, &QNetworkReply::readyRead, write);
-    QObject::connect(reply, &QNetworkReply::finished, [=]() {
-      write();
-      // A zip altered on the way must never reach the updater
-      if (reply->error() == QNetworkReply::NoError &&
-          hash->result() == expected)
-        file->commit();
-      else
-        file->cancelWriting();
-      reply->deleteLater();
-      manager->deleteLater();
-    });
-  });
+  QNetworkReply *reply = manager->get(QNetworkRequest(
+      QUrl(InhouseVersion::releaseZipUrl(version) + ".sha256")));
+  QObject::connect(
+      reply, &QNetworkReply::finished, [reply, manager, version]() {
+        reply->deleteLater();
+        QByteArray expected =
+            QByteArray::fromHex(reply->readAll().trimmed().left(64));
+        if (reply->error() == QNetworkReply::NoError && expected.size() == 32)
+          downloadZip(manager, version, expected);
+        else
+          manager->deleteLater();
+      });
 }
 
 //-----------------------------------------------------------------------------
