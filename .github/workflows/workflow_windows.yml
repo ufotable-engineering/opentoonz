@@ -250,10 +250,13 @@ jobs:
           ARTIFACT: ${{ steps.ver.outputs.artifact }}
         run: |
           7z a -tzip "$env:ARTIFACT.zip" .\artifact\*
+          # Checked by the in-house updater before it keeps the downloaded zip
+          (Get-FileHash "$env:ARTIFACT.zip" -Algorithm SHA256).Hash.ToLower() |
+            Set-Content -NoNewline "$env:ARTIFACT.zip.sha256"
           gh release create "integration-$env:INHOUSE_VERSION" `
             --target $env:GITHUB_SHA `
             --title "integration $env:INHOUSE_VERSION" `
             --notes "Built from $env:GITHUB_SHA" `
             --generate-notes `
-            "$env:ARTIFACT.zip" artifact\inhouse_version.txt
+            "$env:ARTIFACT.zip" "$env:ARTIFACT.zip.sha256" artifact\inhouse_version.txt
         shell: pwsh

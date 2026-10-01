@@ -7,6 +7,7 @@
 
 // Qt includes
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -19,6 +20,8 @@
 #include <QSaveFile>
 #include <QTemporaryFile>
 #include <QVersionNumber>
+
+#include <memory>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -105,25 +108,46 @@ void InhouseUpdate::download(const QString &version) {
   QNetworkAccessManager *manager = new QNetworkAccessManager(qApp);
   manager->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
 
-  // An interrupted download must not leave a zip that looks complete
-  QSaveFile *file = new QSaveFile(zipPath(version), manager);
-  if (!file->open(QIODevice::WriteOnly)) {
-    manager->deleteLater();
-    return;
-  }
+  QString zipUrl = InhouseVersion::releaseZipUrl(version);
+  QNetworkReply *hashReply =
+      manager->get(QNetworkRequest(QUrl(zipUrl + ".sha256")));
+  QObject::connect(hashReply, &QNetworkReply::finished, [=]() {
+    hashReply->deleteLater();
+    QByteArray expected =
+        QByteArray::fromHex(hashReply->readAll().trimmed().left(64));
+    if (hashReply->error() != QNetworkReply::NoError || expected.size() != 32) {
+      manager->deleteLater();
+      return;
+    }
 
-  QNetworkReply *reply = manager->get(
-      QNetworkRequest(QUrl(InhouseVersion::releaseZipUrl(version))));
-  QObject::connect(reply, &QNetworkReply::readyRead,
-                   [reply, file]() { file->write(reply->readAll()); });
-  QObject::connect(reply, &QNetworkReply::finished, [reply, file, manager]() {
-    file->write(reply->readAll());
-    if (reply->error() == QNetworkReply::NoError)
-      file->commit();
-    else
-      file->cancelWriting();
-    reply->deleteLater();
-    manager->deleteLater();
+    // An interrupted download must not leave a zip that looks complete
+    QSaveFile *file = new QSaveFile(zipPath(version), manager);
+    if (!file->open(QIODevice::WriteOnly)) {
+      manager->deleteLater();
+      return;
+    }
+
+    auto hash =
+        std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
+    QNetworkReply *reply = manager->get(QNetworkRequest(QUrl(zipUrl)));
+
+    auto write = [reply, file, hash]() {
+      QByteArray data = reply->readAll();
+      hash->addData(data);
+      file->write(data);
+    };
+    QObject::connect(reply, &QNetworkReply::readyRead, write);
+    QObject::connect(reply, &QNetworkReply::finished, [=]() {
+      write();
+      // A zip altered on the way must never reach the updater
+      if (reply->error() == QNetworkReply::NoError &&
+          hash->result() == expected)
+        file->commit();
+      else
+        file->cancelWriting();
+      reply->deleteLater();
+      manager->deleteLater();
+    });
   });
 }
 
