@@ -765,6 +765,35 @@ protected slots:
 
 //=============================================================================
 //
+// ShiftTraceSettingsPane
+// contents of the "Shift and Trace Settings" floating panel
+//
+//=============================================================================
+
+class DVAPI ShiftTraceSettingsPane final : public QFrame {
+  Q_OBJECT
+
+  TTool *m_tool;
+  TStringProperty *m_snapRatioProp;
+  QList<QPushButton *> m_snapPresetBtns;
+  QList<ToolOptionControl *> m_controls;
+
+public:
+  ShiftTraceSettingsPane(QWidget *parent = 0);
+  ~ShiftTraceSettingsPane();
+
+protected:
+  void showEvent(QShowEvent *) override;
+  void hideEvent(QHideEvent *) override;
+
+protected slots:
+  void updateStatus();
+  void onToolSwitched();
+  void onSnapPresetClicked();
+};
+
+//=============================================================================
+//
 // ZoomToolOptionsBox
 //
 //=============================================================================
