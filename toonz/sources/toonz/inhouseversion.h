@@ -20,6 +20,7 @@ void applyToEnv();
 
 QString versionFileUrl();
 QString releasePageUrl();
+QString releaseZipUrl(const QString &version);
 
 // Always false for dev builds
 bool isNewer(const QString &latest);

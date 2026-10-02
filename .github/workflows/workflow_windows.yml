@@ -55,6 +55,12 @@ jobs:
       OPENCV_VERSION: "4.13.0"              # OpenCV version
       OpenCV_DIR: C:\tools\opencv\build     # Path to OpenCV
 
+      # Qt 5.15 only loads the OpenSSL 1.1 DLL names, and 1.1.1w is the last
+      # public 1.1.1 release
+      OPENSSL_VERSION: "1.1.1w"
+      OPENSSL_SHA256: cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8
+      OPENSSL_DIR: C:\tools\openssl
+
     steps:
       - uses: actions/checkout@v6
         with:
@@ -124,6 +130,34 @@ jobs:
           7z x -y thirdparty-libs.zip
         shell: cmd    
 
+      # Qt loads OpenSSL at runtime for HTTPS and windeployqt does not ship it.
+      # Without these DLLs the update check and download fail silently.
+      - name: Cache OpenSSL
+        id: cache-openssl
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.OPENSSL_DIR }}
+          key: ${{ runner.os }}-openssl-${{ env.OPENSSL_VERSION }}-noasm
+
+      # no-asm because the runner has no NASM
+      - name: Build OpenSSL if cache is missing
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        run: |
+          @echo on
+          curl -fsSL -o openssl.tar.gz https://github.com/openssl/openssl/releases/download/OpenSSL_%OPENSSL_VERSION:.=_%/openssl-%OPENSSL_VERSION%.tar.gz || exit /b 1
+          pwsh -NoProfile -Command "if ((Get-FileHash openssl.tar.gz -Algorithm SHA256).Hash -ne $env:OPENSSL_SHA256) { exit 1 }" || exit /b 1
+          tar -xf openssl.tar.gz || exit /b 1
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSDIR=%%i
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cd openssl-%OPENSSL_VERSION%
+          C:\Strawberry\perl\bin\perl.exe Configure VC-WIN64A no-asm no-tests || exit /b 1
+          nmake build_libs || exit /b 1
+          mkdir %OPENSSL_DIR%
+          copy /Y libssl-1_1-x64.dll %OPENSSL_DIR% || exit /b 1
+          copy /Y libcrypto-1_1-x64.dll %OPENSSL_DIR% || exit /b 1
+          copy /Y LICENSE %OPENSSL_DIR%\LICENSE-OpenSSL.txt || exit /b 1
+        shell: cmd
+
       # Add msbuild to PATH for build process
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v3
@@ -174,6 +208,8 @@ jobs:
           
           REM Copy OpenCV DLL (IMPORTANT: Update path/filename when upgrading OpenCV version)
           copy /Y "C:\tools\opencv\build\x64\vc16\bin\opencv_world4130.dll" Opentoonz
+
+          copy /Y %OPENSSL_DIR%\* Opentoonz || exit /b 1
           
           REM Deploy Qt dependencies
           "%QT_PATH%\bin\windeployqt.exe" Opentoonz\Opentoonz.exe --opengl
@@ -181,6 +217,8 @@ jobs:
           del /Q Opentoonz\*.pdb  REM Remove .pdb files
           del /Q Opentoonz\vc_redist.x64.exe REM Remove vc_redist.x64.exe file
           
+          copy /Y ..\sources\toonz\inhouse_update.ps1 Opentoonz
+
           REM Create portablestuff directory and copy stuff folder
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
@@ -210,10 +248,13 @@ jobs:
           ARTIFACT: ${{ steps.ver.outputs.artifact }}
         run: |
           7z a -tzip "$env:ARTIFACT.zip" .\artifact\*
+          # Checked by the in-house updater before it keeps the downloaded zip
+          (Get-FileHash "$env:ARTIFACT.zip" -Algorithm SHA256).Hash.ToLower() |
+            Set-Content -NoNewline "$env:ARTIFACT.zip.sha256"
           gh release create "integration-$env:INHOUSE_VERSION" `
             --target $env:GITHUB_SHA `
             --title "integration $env:INHOUSE_VERSION" `
             --notes "Built from $env:GITHUB_SHA" `
             --generate-notes `
-            "$env:ARTIFACT.zip" artifact\inhouse_version.txt
+            "$env:ARTIFACT.zip" "$env:ARTIFACT.zip.sha256" artifact\inhouse_version.txt
         shell: pwsh
