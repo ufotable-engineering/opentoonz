@@ -807,6 +807,11 @@ bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
       return true;
   }
 
+  // The settings panel stays enabled under the navigation tools. The curve
+  // is discarded on the next activation, so only the settings are kept
+  if (TTool::getApplication()->getCurrentTool()->getTool() != this)
+    return true;
+
   // Ghosts moved by hand without a trajectory must survive a mode switch
   if (m_curveStatus == ThreePointsCurve) {
     m_ratio = ratioEntered ? snapOrJump(m_ratio) : snapRatio(m_ratio);
