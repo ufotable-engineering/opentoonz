@@ -1099,6 +1099,10 @@ Do you want to proceed?</source>
         <translation>多角形</translation>
     </message>
     <message>
+        <source>Spline</source>
+        <translation>スプライン</translation>
+    </message>
+    <message>
         <source>Butt cap</source>
         <translation>バット線端</translation>
     </message>

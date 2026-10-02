@@ -45,6 +45,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QRadialGradient>
+#include <algorithm>
 #include <vector>
 #include <map>
 
@@ -565,6 +566,7 @@ void PrimitiveParam::updateTranslation() {
   m_type.setItemUIName(L"Arc", tr("Arc"));
   m_type.setItemUIName(L"MultiArc", tr("MultiArc"));
   m_type.setItemUIName(L"Polygon", tr("Polygon"));
+  m_type.setItemUIName(L"Spline", tr("Spline"));
 
   m_toolSize.setQStringName(tr("Size:"));
   m_rasterToolSize.setQStringName(tr("Thickness:"));
@@ -1061,6 +1063,66 @@ public:
 };
 
 //=============================================================================
+// Spline Primitive Class Declaration
+//-----------------------------------------------------------------------------
+
+class SplinePrimitive;
+
+class SplinePrimitiveUndo final : public TUndo {
+  std::vector<TPointD> m_oldPoints;
+  std::vector<TPointD> m_newPoints;
+  SplinePrimitive *m_primitive;
+
+public:
+  SplinePrimitiveUndo(const std::vector<TPointD> &points,
+                      SplinePrimitive *primitive)
+      : TUndo(), m_oldPoints(points), m_primitive(primitive) {}
+
+  void undo() const override;
+  void redo() const override;
+  void setNewPoints(const std::vector<TPointD> &points) {
+    m_newPoints = points;
+  }
+
+  int getSize() const override { return sizeof(this); }
+  int getHistoryType() override { return HistoryType::GeometricTool; }
+};
+
+//-----------------------------------------------------------------------------
+
+class SplinePrimitive final : public Primitive {
+  std::vector<TPointD> m_points;
+  TPointD m_mousePosition;
+  TPixel32 m_color;
+  bool m_closed;
+
+public:
+  SplinePrimitive(PrimitiveParam *param, GeometricTool *tool, bool rasterTool)
+      : Primitive(param, tool, rasterTool), m_closed(false) {}
+
+  std::string getName() const override { return "Spline"; }
+
+  TStroke *makeStroke() const override;
+  void draw() override;
+  void leftButtonDown(const TPointD &pos, const TMouseEvent &e) override;
+  void leftButtonUp(const TPointD &pos, const TMouseEvent &) override;
+  void leftButtonDoubleClick(const TPointD &, const TMouseEvent &e) override;
+  void mouseMove(const TPointD &pos, const TMouseEvent &e) override;
+  bool keyDown(QKeyEvent *event) override;
+  void onActivate() override;
+  void onDeactivate() override { onActivate(); }
+  void onEnter() override;
+  void onImageChanged() override { onActivate(); }
+  void setPoints(const std::vector<TPointD> &points) { m_points = points; }
+
+  // Only execute touchImage when clicking the first point of the spline
+  bool canTouchImageOnPreLeftClick() override { return m_points.empty(); }
+
+private:
+  void endSpline();
+};
+
+//=============================================================================
 // Geometric Tool
 //-----------------------------------------------------------------------------
 GeometricTool::GeometricTool(int targetType)
@@ -1084,6 +1146,7 @@ GeometricTool::GeometricTool(int targetType)
     addPrimitive(new ArcPrimitive(&m_param, this, true));
     addPrimitive(new MultiArcPrimitive(&m_param, this, true));
     addPrimitive(new PolygonPrimitive(&m_param, this, true));
+    addPrimitive(new SplinePrimitive(&m_param, this, true));
   } else  // targetType == 1
   {
     // vector
@@ -1095,6 +1158,7 @@ GeometricTool::GeometricTool(int targetType)
     addPrimitive(new ArcPrimitive(&m_param, this, false));
     addPrimitive(new MultiArcPrimitive(&m_param, this, false));
     addPrimitive(new PolygonPrimitive(&m_param, this, false));
+    addPrimitive(new SplinePrimitive(&m_param, this, false));
   }
 }
 
@@ -3331,6 +3395,240 @@ void PolygonPrimitive::mouseMove(const TPointD &pos, const TMouseEvent &e) {
   TPointD newPos = calculateSnap(pos);
   newPos         = checkGuideSnapping(pos);
   m_tool->invalidate();
+}
+
+//=============================================================================
+// Spline Primitive Class Implementation
+//-----------------------------------------------------------------------------
+
+// Builds a centripetal Catmull-Rom spline passing through the points. The
+// centripetal parameterization avoids cusps and self-intersections when the
+// points are unevenly spaced.
+static TStroke *makeSplineStroke(std::vector<TPointD> points, bool closed,
+                                 double thick) {
+  const double minDist2 = 1e-8;
+  points.erase(std::unique(points.begin(), points.end(),
+                           [minDist2](const TPointD &a, const TPointD &b) {
+                             return tdistance2(a, b) < minDist2;
+                           }),
+               points.end());
+  if (closed && points.size() > 1 &&
+      tdistance2(points.front(), points.back()) < minDist2)
+    points.pop_back();
+
+  int n = points.size();
+  if (n < 2) return 0;
+  if (n < 3) closed = false;
+
+  auto pointAt = [&](int i) {
+    if (closed) return points[(i + n) % n];
+    if (i < 0) return 2.0 * points[0] - points[1];
+    if (i >= n) return 2.0 * points[n - 1] - points[n - 2];
+    return points[i];
+  };
+
+  std::vector<TThickPoint> controlPoints(1, TThickPoint(points[0], thick));
+  int segmentCount = closed ? n : n - 1;
+  for (int i = 0; i < segmentCount; i++) {
+    TPointD p0 = pointAt(i - 1), p1 = pointAt(i), p2 = pointAt(i + 1),
+            p3 = pointAt(i + 2);
+    double d0  = std::sqrt(tdistance(p0, p1));
+    double d1  = std::sqrt(tdistance(p1, p2));
+    double d2  = std::sqrt(tdistance(p2, p3));
+
+    TPointD m1 = d1 * ((p1 - p0) * (1.0 / d0) - (p2 - p0) * (1.0 / (d0 + d1)) +
+                       (p2 - p1) * (1.0 / d1));
+    TPointD m2 = d1 * ((p2 - p1) * (1.0 / d1) - (p3 - p1) * (1.0 / (d1 + d2)) +
+                       (p3 - p2) * (1.0 / d2));
+
+    std::vector<TThickQuadratic *> chunks;
+    computeQuadraticsFromCubic(TThickPoint(p1, thick),
+                               TThickPoint(p1 + m1 * (1.0 / 3.0), thick),
+                               TThickPoint(p2 - m2 * (1.0 / 3.0), thick),
+                               TThickPoint(p2, thick), 0.25, chunks);
+    for (TThickQuadratic *chunk : chunks) {
+      controlPoints.push_back(chunk->getThickP1());
+      controlPoints.push_back(chunk->getThickP2());
+    }
+    clearPointerContainer(chunks);
+  }
+
+  TStroke *stroke = new TStroke(controlPoints);
+  if (closed) stroke->setSelfLoop();
+  return stroke;
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitiveUndo::undo() const {
+  m_primitive->setPoints(m_oldPoints);
+  TTool::getApplication()->getCurrentTool()->getTool()->invalidate();
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitiveUndo::redo() const {
+  m_primitive->setPoints(m_newPoints);
+  TTool::getApplication()->getCurrentTool()->getTool()->invalidate();
+}
+
+//-----------------------------------------------------------------------------
+
+TStroke *SplinePrimitive::makeStroke() const {
+  return makeSplineStroke(m_points, m_closed, getThickness());
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::draw() {
+  drawSnap();
+
+  if ((!m_isEditing && !m_isPrompting) || m_points.empty()) return;
+
+  double pixelSize = m_tool->getPixelSize();
+
+  std::vector<TPointD> points = m_points;
+  if (!m_closed) points.push_back(m_mousePosition);
+  tglColor(m_isEditing ? m_color : TPixel32::Green);
+  if (TStroke *stroke = makeSplineStroke(points, m_closed, 0)) {
+    drawStrokeCenterline(*stroke, pixelSize);
+    delete stroke;
+  }
+
+  tglColor(TPixel(79, 128, 255));
+  for (const TPointD &point : m_points) tglDrawDisk(point, 2 * pixelSize);
+
+  if (m_closed)
+    tglColor(TPixel32((m_color.r + 127) % 255, m_color.g,
+                      (m_color.b + 127) % 255, m_color.m));
+  else
+    tglColor(m_color);
+  tglDrawCircle(m_points[0], joinDistance * pixelSize);
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
+  TTool::Application *app = TTool::getApplication();
+  if (!app) return;
+
+  if (app->getCurrentObject()->isSpline()) {
+    m_color     = TPixel32::Red;
+    m_isEditing = true;
+  } else {
+    const TColorStyle *style = app->getCurrentLevelStyle();
+    if (style) {
+      m_isEditing = style->isStrokeStyle();
+      m_color     = style->getAverageColor();
+    } else {
+      m_isEditing = false;
+      m_color     = TPixel32::Black;
+    }
+  }
+
+  // Clicking on the first point closes the spline in leftButtonUp().
+  if (!m_isEditing || m_closed) return;
+
+  SplinePrimitiveUndo *undo = new SplinePrimitiveUndo(m_points, this);
+  TUndoManager::manager()->add(undo);
+  m_mousePosition = pos;
+
+  if (e.isShiftPressed() && !m_points.empty())
+    m_points.push_back(rectify(m_points.back(), pos));
+  else
+    m_points.push_back(getSnap(pos));
+  undo->setNewPoints(m_points);
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
+  if (m_closed) endSpline();
+  resetSnap();
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::leftButtonDoubleClick(const TPointD &,
+                                            const TMouseEvent &e) {
+  endSpline();
+  resetSnap();
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::mouseMove(const TPointD &pos, const TMouseEvent &e) {
+  TPointD newPos = calculateSnap(pos);
+  newPos         = checkGuideSnapping(pos);
+
+  if (m_isEditing) {
+    if (e.isShiftPressed() && !m_points.empty())
+      m_mousePosition = rectify(m_points.back(), newPos);
+    else
+      m_mousePosition = newPos;
+
+    double dist = joinDistance * joinDistance;
+    if (m_points.size() > 2 &&
+        tdistance2(pos, m_points.front()) < dist * m_tool->getPixelSize()) {
+      m_closed        = true;
+      m_mousePosition = m_points.front();
+    } else
+      m_closed = false;
+  } else
+    m_mousePosition = newPos;
+  m_tool->invalidate();
+}
+
+//-----------------------------------------------------------------------------
+
+bool SplinePrimitive::keyDown(QKeyEvent *event) {
+  if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+    endSpline();
+    return true;
+  }
+
+  if (event->key() != Qt::Key_Escape || !m_isEditing) return false;
+
+  TUndoManager::manager()->popUndo(m_points.size());
+  onActivate();
+  m_tool->invalidate();
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::endSpline() {
+  if (!m_isEditing) return;
+  m_isEditing = false;
+
+  // The per-click undos are superseded by the undo of the final stroke.
+  TUndoManager::manager()->popUndo(m_points.size());
+  m_tool->addStroke();
+
+  m_closed = false;
+  m_points.clear();
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::onActivate() {
+  m_isEditing = false;
+  m_closed    = false;
+  m_points.clear();
+}
+
+//-----------------------------------------------------------------------------
+
+void SplinePrimitive::onEnter() {
+  TTool::Application *app = TTool::getApplication();
+  if (!app) return;
+
+  if (app->getCurrentObject()->isSpline())
+    m_color = TPixel32::Red;
+  else {
+    const TColorStyle *style = app->getCurrentLevelStyle();
+    if (style) m_color = style->getAverageColor();
+  }
 }
 
 //==========================================================================================================
