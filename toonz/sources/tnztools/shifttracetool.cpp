@@ -518,9 +518,13 @@ ShiftTraceTool::GadgetId ShiftTraceTool::getGadget(const TPointD &p) {
   // p2 comes first so it wins when it overlaps an end point: dragging it
   // away along the trajectory frees the end point again, the reverse would
   // leave p2 stuck under it
-  gadgets.push_back(std::make_pair(m_p2, CurvePmGadget));
-  gadgets.push_back(std::make_pair(m_p0, CurveP0Gadget));
-  gadgets.push_back(std::make_pair(m_p1, CurveP1Gadget));
+  // The points keep their values after the curve is cleared, so they would
+  // be grabbed while invisible
+  if (m_curveStatus != NoCurve) {
+    gadgets.push_back(std::make_pair(m_p2, CurvePmGadget));
+    gadgets.push_back(std::make_pair(m_p0, CurveP0Gadget));
+    gadgets.push_back(std::make_pair(m_p1, CurveP1Gadget));
+  }
   if (m_curveStatus == ThreePointsCurve && !m_straightTrajectory.getValue()) {
     TPointD apex = arcApex();
     TPointD off  = chordNormal() * bendHandleOffset();
@@ -794,7 +798,14 @@ bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
   ShiftTraceRotateAlongArc     = (int)m_rotateAlongArc.getValue();
 
   bool ratioEntered = propertyName == m_snapRatio.getName();
-  if (ratioEntered) parseSnapRatio();
+  if (ratioEntered) {
+    int oldDivision = m_snapDivision, oldNumerator = m_snapNumerator;
+    parseSnapRatio();
+    // The text field also reports a mere focus loss, which must not reset
+    // ghosts adjusted by hand
+    if (m_snapDivision == oldDivision && m_snapNumerator == oldNumerator)
+      return true;
+  }
 
   // Ghosts moved by hand without a trajectory must survive a mode switch
   if (m_curveStatus == ThreePointsCurve) {
