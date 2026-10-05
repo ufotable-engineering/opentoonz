@@ -288,7 +288,6 @@ class Disk {
     }
   }
 
-  // Fills the pixels whose centres fall inside the real-valued circle.
   void drawSubPixel(const TRasterCM32P &ras, int styleId) const {
     TRect bounds = ras->getBounds();
     TPoint nearest(tround(m_centre.x), tround(m_centre.y));
