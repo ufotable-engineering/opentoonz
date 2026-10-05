@@ -633,6 +633,16 @@ double computeThickness(double pressure, const TDoublePairProperty &property) {
   return (thick0 + (thick1 - thick0) * t);
 }
 
+// Pencil mode keeps its integer-pixel stamps unless a fractional size is set,
+// so that existing integer sizes draw exactly as before.
+bool hasFractionalSize(const TDoublePairProperty &property) {
+  auto isFractional = [](double v) {
+    return std::abs(v - std::round(v)) > 1e-6;
+  };
+  return isFractional(property.getValue().first) ||
+         isFractional(property.getValue().second);
+}
+
 }  // namespace
 
 //--------------------------------------------------------------------------------------------------
@@ -1135,7 +1145,7 @@ void ToonzRasterBrushTool::handleMouseEvent(MouseEventType type,
   bool shift       = e.getModifiersMask() & TMouseEvent::SHIFT_KEY;
   bool control     = e.getModifiersMask() & TMouseEvent::CTRL_KEY;
   TPointD fixedPos = pos;
-  if (m_pencil.getValue()) {
+  if (m_pencil.getValue() && !hasFractionalSize(m_rasThickness)) {
     fixedPos = getCenteredCursorPos(pos);
     fixedPos = TPointD(tround(fixedPos.x), tround(fixedPos.y));
   }
@@ -1415,6 +1425,8 @@ void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
           ras, BRUSH, NONE, m_painting.styleId, thickPoint,
           drawOrder != OverAll, 0, m_modifierLockAlpha.getValue(),
           !m_painting.pencil.realPencil, drawOrder == PaletteOrder);
+      handler->brush.setSubPixel(m_painting.pencil.realPencil &&
+                                 hasFractionalSize(m_rasThickness));
 
       // if the drawOrder mode = "Palette Order",
       // get styleId list which is above the current style in the palette
@@ -1613,6 +1625,12 @@ void ToonzRasterBrushTool::draw() {
   if (m_isMyPaintStyleSelected) {
     tglDrawCircle(m_brushPos, (m_minCursorThick + 1) * 0.5);
     tglDrawCircle(m_brushPos, (m_maxCursorThick + 1) * 0.5);
+    return;
+  }
+
+  if (m_pencil.getValue() && hasFractionalSize(m_rasThickness)) {
+    tglDrawCircle(m_brushPos, (m_minThick + 1) * 0.5);
+    tglDrawCircle(m_brushPos, (m_maxThick + 1) * 0.5);
     return;
   }
 
