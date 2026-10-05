@@ -288,25 +288,21 @@ class Disk {
     }
   }
 
-  // Fills the pixels whose centres fall inside the real-valued circle, so that
-  // fractional sizes average out along the stroke.
+  // Fills the pixels whose centres fall inside the real-valued circle.
   void drawSubPixel(const TRasterCM32P &ras, int styleId) const {
     TRect bounds = ras->getBounds();
     TPoint nearest(tround(m_centre.x), tround(m_centre.y));
-    if (bounds.contains(nearest)) lightPixel(ras, nearest, -1, styleId, false);
+    if (bounds.contains(nearest)) fill(ras, nearest, nearest, styleId);
 
-    TRect box(tceil(m_centre.x - m_radius), tceil(m_centre.y - m_radius),
-              tfloor(m_centre.x + m_radius), tfloor(m_centre.y + m_radius));
-    box *= bounds;
-    if (box.isEmpty()) return;
     double r2 = m_radius * m_radius;
-    for (int y = box.y0; y <= box.y1; y++) {
-      double dy = y - m_centre.y;
-      for (int x = box.x0; x <= box.x1; x++) {
-        double dx = x - m_centre.x;
-        if (dx * dx + dy * dy <= r2)
-          lightPixel(ras, TPoint(x, y), -1, styleId, false);
-      }
+    int y0    = std::max(bounds.y0, tceil(m_centre.y - m_radius));
+    int y1    = std::min(bounds.y1, tfloor(m_centre.y + m_radius));
+    for (int y = y0; y <= y1; y++) {
+      double dy   = y - m_centre.y;
+      double half = sqrt(std::max(0.0, r2 - dy * dy));
+      int x0      = std::max(bounds.x0, tceil(m_centre.x - half));
+      int x1      = std::min(bounds.x1, tfloor(m_centre.x + half));
+      if (x0 <= x1) fill(ras, TPoint(x0, y), TPoint(x1, y), styleId);
     }
   }
 
@@ -385,6 +381,8 @@ public:
 
   double getRadius() const { return m_radius; }
 
+  bool isSubPixel() const { return m_subPixel; }
+
   void setCentre(const TPointD &centre) { m_centre = centre; }
 
   void setCentre(double x, double y) {
@@ -445,7 +443,8 @@ bool isDiskNecessaryNecessary(const TQuadratic &quadratic, double tCurrent,
 // Disegna una porzione di del tratto (un piccolo arco)
 void makeLittleArch(const TRasterCM32P &ras, const Disk &disk1,
                     const Disk &disk2, const Disk &disk3, int styleId,
-                    bool doAntialias, bool subPixel) {
+                    bool doAntialias) {
+  bool subPixel   = disk1.isSubPixel();
   TPointD center1 = disk1.getCentre();
   TPointD center2 = disk2.getCentre();
   TPointD center3 = disk3.getCentre();
@@ -454,11 +453,11 @@ void makeLittleArch(const TRasterCM32P &ras, const Disk &disk1,
   disk1.draw(ras, styleId);
 
   double length = quadratic.getLength();
-  // Sub-pixel centres are not snapped, so even short arcs can leave gaps.
+  // Sub-pixel stamps are not snapped, so short or sparse arcs leave notches.
   if (length < 2 && !subPixel) return;
-  // Sparse stamps leave visible notches when the stamp size is fractional.
-  double t = 0, step = 1 / (length * (subPixel ? 8.0 : 1.5)),
-         t2            = quadratic.getT(center2);
+  double density = 1.5;
+  if (subPixel) density = std::max(1.5, 6.0 / disk1.getRadius());
+  double t = 0, step = 1 / (length * density), t2 = quadratic.getT(center2);
   bool idLastDiskDrown = true;
   for (t = step; t < 1; t += step) {
     TPointD center = quadratic.getPoint(t);
@@ -479,14 +478,13 @@ void makeLittleArch(const TRasterCM32P &ras, const Disk &disk1,
 
 // Disegna un piccolo segmento, invece di un archetto.
 void makeLittleSegment(const TRasterCM32P &ras, const Disk &disk1,
-                       const Disk &disk2, int styleId, bool doAntialias,
-                       bool subPixel) {
+                       const Disk &disk2, int styleId, bool doAntialias) {
   TPointD center1 = disk1.getCentre();
   TPointD center2 = disk2.getCentre();
   TPointD middle  = (center1 + center2) * 0.5;
   double raius    = (disk1.getRadius() + disk2.getRadius()) * 0.5;
-  Disk disk(TThickPoint(middle, raius * 2), doAntialias, subPixel);
-  makeLittleArch(ras, disk1, disk, disk2, styleId, doAntialias, subPixel);
+  Disk disk(TThickPoint(middle, raius * 2), doAntialias, disk1.isSubPixel());
+  makeLittleArch(ras, disk1, disk, disk2, styleId, doAntialias);
 }
 
 //=============================================================================
@@ -510,22 +508,22 @@ void rasterBrush(const TRasterCM32P &rasBuffer,
   } else if (n == 2) {
     makeLittleSegment(rasBuffer, Disk(points[0], doAntialias, subPixel),
                       Disk(points[1], doAntialias, subPixel), styleId,
-                      doAntialias, subPixel);
+                      doAntialias);
     return;
   } else if (n == 4) {
     makeLittleArch(rasBuffer, Disk(points[0], doAntialias, subPixel),
                    Disk(points[1], doAntialias, subPixel),
-                   Disk(points[2], doAntialias, subPixel), styleId, doAntialias,
-                   subPixel);
+                   Disk(points[2], doAntialias, subPixel), styleId,
+                   doAntialias);
     makeLittleSegment(rasBuffer, Disk(points[2], doAntialias, subPixel),
                       Disk(points[3], doAntialias, subPixel), styleId,
-                      doAntialias, subPixel);
+                      doAntialias);
     return;
   } else {
     for (i = 0; i + 2 < n; i += 2)
       makeLittleArch(rasBuffer, Disk(points[i], doAntialias, subPixel),
                      Disk(points[i + 1], doAntialias, subPixel),
                      Disk(points[i + 2], doAntialias, subPixel), styleId,
-                     doAntialias, subPixel);
+                     doAntialias);
   }
 }

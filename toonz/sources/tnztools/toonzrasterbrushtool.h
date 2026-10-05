@@ -197,6 +197,7 @@ public:
 
 private:
   void updateModifiers();
+  bool isSubPixelPencil() const;
 
   enum MouseEventType { ME_DOWN, ME_DRAG, ME_UP, ME_MOVE };
   void handleMouseEvent(MouseEventType type, const TPointD &pos,
@@ -263,6 +264,7 @@ protected:
     struct Pencil {
       bool isActive   = false;
       bool realPencil = false;
+      bool subPixel   = false;
     } pencil;
 
     struct Blured {

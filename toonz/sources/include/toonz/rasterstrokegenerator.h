@@ -38,7 +38,7 @@ class DVAPI RasterStrokeGenerator {
   bool m_isPaletteOrder;  // Used in the Draw Order option of Brush Tool,
                           // use style order to define line stacking order
   bool m_modifierLockAlpha;
-  bool m_subPixel;  // Keeps fractional centres and sizes in pencil mode
+  bool m_subPixel;
   QSet<int> m_aboveStyleIds;
 
   // Ricalcola i punti in un nuovo sistema di riferimento
