@@ -38,6 +38,7 @@ class DVAPI RasterStrokeGenerator {
   bool m_isPaletteOrder;  // Used in the Draw Order option of Brush Tool,
                           // use style order to define line stacking order
   bool m_modifierLockAlpha;
+  bool m_subPixel;
   QSet<int> m_aboveStyleIds;
 
   // Ricalcola i punti in un nuovo sistema di riferimento
@@ -64,6 +65,7 @@ public:
 
   bool isPaletteOrder() { return m_isPaletteOrder; }
   void setAboveStyleIds(QSet<int> &ids) { m_aboveStyleIds = ids; }
+  void setSubPixel(bool subPixel) { m_subPixel = subPixel; }
 
   // Inserisce un punto in "m_points"
   void add(const TThickPoint &p);
