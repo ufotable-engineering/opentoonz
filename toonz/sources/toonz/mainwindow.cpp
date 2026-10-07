@@ -3138,6 +3138,8 @@ void MainWindow::defineActions() {
                "", ToolCommandType, "geometric_multiarc");
   createAction(MI_GeometricPolygon, QT_TR_NOOP("Geometric Tool - Polygon"), "",
                ToolCommandType, "geometric_polygon");
+  createAction(MI_GeometricSpline, QT_TR_NOOP("Geometric Tool - Spline"), "",
+               ToolCommandType, "geometric_spline");
 
   /*-- Type tool + style switching shortcuts --*/
   createAction(MI_TypeNextStyle, QT_TR_NOOP("Type Tool - Next Style"), "",
@@ -3400,6 +3402,8 @@ void MainWindow::defineActions() {
                           QT_TR_NOOP("Geometric Shape MultiArc"), "");
   createToolOptionsAction("A_ToolOption_GeometricShape:Polygon",
                           QT_TR_NOOP("Geometric Shape Polygon"), "");
+  createToolOptionsAction("A_ToolOption_GeometricShape:Spline",
+                          QT_TR_NOOP("Geometric Shape Spline"), "");
   createToolOptionsAction("A_ToolOption_GeometricEdge",
                           QT_TR_NOOP("Geometric Edge"), "");
   createToolOptionsAction("A_ToolOption_AssistantType",
