@@ -1489,6 +1489,15 @@ GeometricToolOptionsBox::GeometricToolOptionsBox(QWidget *parent, TTool *tool,
   m_pencilMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Pencil Mode"));
 
+  if (m_targetType & (TTool::ToonzImage | TTool::RasterImage)) {
+    ToolOptionSlider *sizeField =
+        dynamic_cast<ToolOptionSlider *>(m_controls.value("Size:"));
+    if (sizeField) {
+      sizeField->setDecimals(1);
+      sizeField->updateStatus();
+    }
+  }
+
   if (m_shapeField->getProperty()->getValue() != L"Polygon") {
     m_poligonSideLabel->setEnabled(false);
     m_poligonSideField->setEnabled(false);
