@@ -1098,6 +1098,7 @@ public:
   void setNewPoints(const std::vector<SplinePoint> &points) {
     m_newPoints = points;
   }
+  bool isStepOf(const SplinePrimitive *primitive) const;
 
   int getSize() const override { return sizeof(*this); }
   int getHistoryType() override { return HistoryType::GeometricTool; }
@@ -1120,7 +1121,7 @@ class SplinePrimitive final : public Primitive {
   SplinePrimitiveUndo *m_dragUndo;
 
   // Undos of a previous spline can remain in the history after it is
-  // finished or abandoned; the session id makes them do nothing.
+  // finished or abandoned; the session id makes undo and redo skip them.
   int m_session;
   int m_undoCount;
   int m_redoCount;
@@ -3565,8 +3566,17 @@ SplinePrimitiveUndo::SplinePrimitiveUndo(SplinePrimitive *primitive)
 
 //-----------------------------------------------------------------------------
 
+bool SplinePrimitiveUndo::isStepOf(const SplinePrimitive *primitive) const {
+  return m_primitive == primitive && m_session == primitive->getSession();
+}
+
+//-----------------------------------------------------------------------------
+
 void SplinePrimitiveUndo::undo() const {
-  if (m_primitive->getSession() != m_session) return;
+  if (!isStepOf(m_primitive)) {
+    TUndoManager::manager()->skip();
+    return;
+  }
   m_primitive->applyUndo(m_oldPoints, true);
   TTool::getApplication()->getCurrentTool()->getTool()->invalidate();
 }
@@ -3574,7 +3584,10 @@ void SplinePrimitiveUndo::undo() const {
 //-----------------------------------------------------------------------------
 
 void SplinePrimitiveUndo::redo() const {
-  if (m_primitive->getSession() != m_session) return;
+  if (!isStepOf(m_primitive)) {
+    TUndoManager::manager()->skip();
+    return;
+  }
   m_primitive->applyUndo(m_newPoints, false);
   TTool::getApplication()->getCurrentTool()->getTool()->invalidate();
 }
@@ -3601,11 +3614,17 @@ void SplinePrimitive::addUndo(SplinePrimitiveUndo *undo) {
 //-----------------------------------------------------------------------------
 
 void SplinePrimitive::popUndos() {
-  // Undone steps follow the remaining ones only while at least one of this
-  // spline's steps is still applied; otherwise they are left as no-ops.
-  if (m_undoCount > 0 && m_redoCount > 0)
-    TUndoManager::manager()->popUndo(m_redoCount, true);
-  if (m_undoCount > 0) TUndoManager::manager()->popUndo(m_undoCount);
+  // Another operation can add its undo while drawing, and popping by count
+  // would then remove it. The steps are left to be skipped in that case.
+  TUndoManager *manager = TUndoManager::manager();
+  int current           = manager->getCurrentHistoryIndex();
+  for (int i = current - m_undoCount + 1; i <= current + m_redoCount; i++) {
+    SplinePrimitiveUndo *undo =
+        dynamic_cast<SplinePrimitiveUndo *>(manager->getUndoItem(i));
+    if (!undo || !undo->isStepOf(this)) return;
+  }
+  if (m_redoCount > 0) manager->popUndo(m_redoCount, true);
+  if (m_undoCount > 0) manager->popUndo(m_undoCount);
 }
 
 //-----------------------------------------------------------------------------
@@ -3745,7 +3764,7 @@ void SplinePrimitive::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
     }
     int index = pickSegment(pos);
     if (index >= 0) {
-      insertPoint(index, {pos, e.isAltPressed()});
+      insertPoint(index, {getSnap(pos), e.isAltPressed()});
       return;
     }
   }
@@ -3810,7 +3829,8 @@ void SplinePrimitive::mouseMove(const TPointD &pos, const TMouseEvent &e) {
   if (m_isEditing && !m_ctrlDown && m_hoverIndex < 0 &&
       m_param->m_editPoints.getValue())
     m_insertIndex = pickSegment(pos);
-  if (m_isEditing && e.isShiftPressed() && !m_points.empty())
+  if (m_isEditing && e.isShiftPressed() && !m_points.empty() &&
+      m_insertIndex < 0)
     m_mousePosition = rectify(m_points.back().m_pos, newPos);
   else
     m_mousePosition = newPos;
