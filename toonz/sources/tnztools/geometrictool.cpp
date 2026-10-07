@@ -1167,9 +1167,7 @@ public:
 private:
   int pickPoint(const TPointD &pos) const;
   int pickSegment(const TPointD &pos) const;
-  bool canCloseAt(int index) const {
-    return index == 0 && m_points.size() > 2;
-  }
+  bool canCloseAt(int index) const { return index == 0 && m_points.size() > 2; }
   void addUndo(SplinePrimitiveUndo *undo);
   void popUndos();
   void insertPoint(int index, const SplinePoint &point);
