@@ -563,6 +563,30 @@ PrimitiveParam::PrimitiveParam(int targetType)
   m_edgeCount.setId("GeometricEdge");
 }
 
+double PrimitiveParam::getRasterToolSize() const {
+  double size = m_rasterToolSize.getValue();
+  return m_pencil.getValue() ? size : tround(size);
+}
+
+//-----------------------------------------------------------------------------
+
+bool PrimitiveParam::snapsToPixel() const {
+  double size = getRasterToolSize();
+  return m_pencil.getValue() &&
+         (m_targetType & (TTool::ToonzImage | TTool::RasterImage)) &&
+         areAlmostEqual(size, std::round(size), 1e-6);
+}
+
+//-----------------------------------------------------------------------------
+
+TPointD PrimitiveParam::snapToPixel(const TPointD &pos) const {
+  if (tround(getRasterToolSize()) % 2 != 0)
+    return TPointD((int)pos.x, (int)pos.y);
+  return TPointD((int)pos.x + 0.5, (int)pos.y + 0.5);
+}
+
+//-----------------------------------------------------------------------------
+
 void PrimitiveParam::updateTranslation() {
   m_type.setQStringName(tr("Shape:"));
   m_type.setItemUIName(L"Rectangle", tr("Rectangle"));
@@ -631,7 +655,7 @@ public:
 
   double getThickness() const {
     if (m_rasterTool) {
-      double thick = m_param->m_rasterToolSize.getValue() * 0.5;
+      double thick = m_param->getRasterToolSize() * 0.5;
       /*---
        For Pencil mode, reduce line width. To make a thickness 1 line 1 pixel.
        (thick = 0)
@@ -1835,7 +1859,7 @@ void GeometricTool::addStroke() {
                                                 filled, TConsts::infiniteRectD,
                                                 !m_param.m_pencil.getValue());
       } else {
-        int thickness = m_param.m_rasterToolSize.getValue();
+        int thickness = tround(m_param.getRasterToolSize());
         TUndoManager::manager()->add(new CMBluredPrimitiveUndo(
             sl, id, stroke, thickness, hardness, selective, false,
             m_isFrameCreated, m_isLevelCreated, m_primitive->getName()));
@@ -1924,7 +1948,7 @@ void GeometricTool::addStroke() {
             sl, id, stroke, opacity, true, m_isFrameCreated, m_isLevelCreated));
         savebox = TRasterImageUtils::addStroke(ri, stroke, TRectD(), opacity);
       } else {
-        int thickness = m_param.m_rasterToolSize.getValue();
+        int thickness = tround(m_param.getRasterToolSize());
         TUndoManager::manager()->add(new FullColorBluredPrimitiveUndo(
             sl, id, stroke, thickness, hardness, opacity, true,
             m_isFrameCreated, m_isLevelCreated));
@@ -2137,15 +2161,7 @@ void RectanglePrimitive::leftButtonDown(const TPointD &pos,
 
   if (!m_isEditing) return;
   TPointD newPos = getSnap(pos);
-  if (m_param->m_pencil.getValue() &&
-      (m_param->m_targetType & TTool::ToonzImage ||
-       m_param->m_targetType & TTool::RasterImage)) {
-    if (m_param->m_rasterToolSize.getValue() % 2 != 0)
-      m_startPoint = TPointD((int)pos.x, (int)pos.y);
-    else
-      m_startPoint = TPointD((int)pos.x + 0.5, (int)pos.y + 0.5);
-  } else
-    m_startPoint = newPos;
+  m_startPoint   = m_param->snapsToPixel() ? m_param->snapToPixel(pos) : newPos;
   m_selectingRect.x0 = m_startPoint.x;
   m_selectingRect.y0 = m_startPoint.y;
   m_selectingRect.x1 = m_startPoint.x;
@@ -2170,14 +2186,7 @@ void RectanglePrimitive::leftButtonDrag(const TPointD &realPos,
     pos = checkGuideSnapping(realPos);
   }
 
-  if (m_param->m_pencil.getValue() &&
-      (m_param->m_targetType & TTool::ToonzImage ||
-       m_param->m_targetType & TTool::RasterImage)) {
-    if (m_param->m_rasterToolSize.getValue() % 2 != 0)
-      pos = TPointD((int)pos.x, (int)pos.y);
-    else
-      pos = TPointD((int)pos.x + 0.5, (int)pos.y + 0.5);
-  }
+  if (m_param->snapsToPixel()) pos = m_param->snapToPixel(pos);
 
   m_selectingRect.x1 = pos.x;
   m_selectingRect.y1 = pos.y;
@@ -2776,14 +2785,7 @@ void LinePrimitive::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 
   TPointD _pos = newPos;
 
-  if (m_param->m_pencil.getValue() &&
-      (m_param->m_targetType & TTool::ToonzImage ||
-       m_param->m_targetType & TTool::RasterImage)) {
-    if (m_param->m_rasterToolSize.getValue() % 2 != 0)
-      _pos = TPointD((int)newPos.x, (int)newPos.y);
-    else
-      _pos = TPointD((int)newPos.x + 0.5, (int)newPos.y + 0.5);
-  }
+  if (m_param->snapsToPixel()) _pos = m_param->snapToPixel(newPos);
 
   if (m_vertex.size() == 0)
     addVertex(_pos);
