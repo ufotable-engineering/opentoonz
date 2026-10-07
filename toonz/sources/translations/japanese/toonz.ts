@@ -7483,6 +7483,10 @@ or you may delete necessary files for it.</source>
         <translation>図形ツール - 形状 - 多角形</translation>
     </message>
     <message>
+        <source>Geometric Shape Spline</source>
+        <translation>図形ツール - 形状 - スプライン</translation>
+    </message>
+    <message>
         <source>Mode - Lines &amp;&amp; Areas</source>
         <translation>共通 - モード - 線と塗り</translation>
     </message>
@@ -7609,6 +7613,10 @@ or you may delete necessary files for it.</source>
     <message>
         <source>Geometric Tool - Polygon</source>
         <translation>図形ツール（切り替え） - 形状 - 多角形</translation>
+    </message>
+    <message>
+        <source>Geometric Tool - Spline</source>
+        <translation>図形ツール（切り替え） - 形状 - スプライン</translation>
     </message>
     <message>
         <source>Type Tool - Next Style</source>

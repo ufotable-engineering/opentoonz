@@ -427,7 +427,8 @@ class GeometricToolOptionsBox final : public ToolOptionsBox {
   ToolOptionCombo *m_shapeField;
   ToolOptionCheckbox *m_pencilMode;
   ToolOptionIntSlider *m_miterField;
-  ToolOptionCheckbox *m_snapCheckbox, *m_smoothCheckbox;
+  ToolOptionCheckbox *m_snapCheckbox, *m_smoothCheckbox, *m_closeLineCheckbox,
+      *m_editPointsCheckbox;
   ToolOptionCombo *m_snapSensitivityCombo;
   TTool *m_tool;
 

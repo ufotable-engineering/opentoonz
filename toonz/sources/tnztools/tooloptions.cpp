@@ -1460,6 +1460,8 @@ GeometricToolOptionsBox::GeometricToolOptionsBox(QWidget *parent, TTool *tool,
     , m_shapeField(0)
     , m_snapCheckbox(0)
     , m_smoothCheckbox(0)
+    , m_closeLineCheckbox(0)
+    , m_editPointsCheckbox(0)
     , m_snapSensitivityCombo(0)
     , m_tool(tool)
     , m_pencilMode(0) {
@@ -1488,17 +1490,13 @@ GeometricToolOptionsBox::GeometricToolOptionsBox(QWidget *parent, TTool *tool,
     m_poligonSideLabel = m_labels.value(m_poligonSideField->propertyName());
   m_pencilMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Pencil Mode"));
-
-  if (m_shapeField->getProperty()->getValue() != L"Polygon") {
-    m_poligonSideLabel->setEnabled(false);
-    m_poligonSideField->setEnabled(false);
-  }
-
   m_smoothCheckbox =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Smooth"));
-  if (m_shapeField->getProperty()->getValue() != L"MultiArc") {
-    m_smoothCheckbox->setEnabled(false);
-  }
+  m_closeLineCheckbox =
+      dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Close Line"));
+  m_editPointsCheckbox = dynamic_cast<ToolOptionCheckbox *>(
+      m_controls.value("Add/Delete Points While Drawing"));
+  onShapeValueChanged(m_shapeField->currentIndex());
 
   bool ret = connect(m_shapeField, SIGNAL(currentIndexChanged(int)), this,
                      SLOT(onShapeValueChanged(int)));
@@ -1592,6 +1590,9 @@ void GeometricToolOptionsBox::onShapeValueChanged(int index) {
   m_poligonSideField->setEnabled(polygonEnabled);
 
   m_smoothCheckbox->setEnabled(range[index] == L"MultiArc");
+  bool splineEnabled = range[index] == L"Spline";
+  m_closeLineCheckbox->setEnabled(splineEnabled);
+  m_editPointsCheckbox->setEnabled(splineEnabled);
 }
 
 //-----------------------------------------------------------------------------

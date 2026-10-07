@@ -381,6 +381,7 @@
 #define MI_GeometricArc "MI_GeometricArc"
 #define MI_GeometricMultiArc "MI_GeometricMultiArc"
 #define MI_GeometricPolygon "MI_GeometricPolygon"
+#define MI_GeometricSpline "MI_GeometricSpline"
 
 #define MI_TypeNextStyle "MI_TypeNextStyle"
 #define MI_TypeOblique "MI_TypeOblique"
