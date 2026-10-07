@@ -1782,6 +1782,10 @@ void SceneViewer::contextMenuEvent(QContextMenuEvent *e) {
 void SceneViewer::onContextMenu(const QPoint &pos, const QPoint &globalPos) {
   if (m_freezedStatus != NO_FREEZED) return;
   if (m_isLocator) return;
+  TTool *currentTool = TApp::instance()->getCurrentTool()->getTool();
+  if (currentTool && currentTool->isEnabled() &&
+      !currentTool->isContextMenuEnabled())
+    return;
   static bool menuVisible = false;
   if (menuVisible) return;
   menuVisible     = true;

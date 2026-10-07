@@ -1099,6 +1099,10 @@ Do you want to proceed?</source>
         <translation>多角形</translation>
     </message>
     <message>
+        <source>Spline</source>
+        <translation>スプライン</translation>
+    </message>
+    <message>
         <source>Butt cap</source>
         <translation>バット線端</translation>
     </message>
@@ -1141,6 +1145,14 @@ Do you want to proceed?</source>
     <message>
         <source>Smooth</source>
         <translation>滑らかに連結</translation>
+    </message>
+    <message>
+        <source>Close Line</source>
+        <translation>線を閉じる</translation>
+    </message>
+    <message>
+        <source>Add/Delete Points While Drawing</source>
+        <translation>描画中に制御点を追加・削除</translation>
     </message>
     <message>
         <source>Rotate</source>
