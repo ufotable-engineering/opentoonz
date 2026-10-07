@@ -631,6 +631,12 @@ double computeThickness(double pressure, const TDoublePairProperty &property) {
   return (thick0 + (thick1 - thick0) * t);
 }
 
+// Keeps sizes on the 0.1 step of the Size field.
+TDoublePairProperty::Value roundSize(const TDoublePairProperty::Value &value) {
+  return TDoublePairProperty::Value(std::round(value.first * 10.0) / 10.0,
+                                    std::round(value.second * 10.0) / 10.0);
+}
+
 }  // namespace
 
 //--------------------------------------------------------------------------------------------------
@@ -1501,7 +1507,7 @@ void ToonzRasterBrushTool::inputMouseMove(const TPointD &position,
       value.first  = tcrop(value.first, range.first, range.second);
       value.second = tcrop(value.second, range.first, range.second);
 
-      setValue(prop, value);
+      setValue(prop, roundSize(value));
     }
   } locals = {this};
 
@@ -1781,8 +1787,8 @@ void ToonzRasterBrushTool::loadPreset() {
 
   try  // Don't bother with RangeErrors
   {
-    m_rasThickness.setValue(
-        TDoublePairProperty::Value(std::max(preset.m_min, 1.0), preset.m_max));
+    m_rasThickness.setValue(roundSize(
+        TDoublePairProperty::Value(std::max(preset.m_min, 1.0), preset.m_max)));
     m_hardness.setValue(preset.m_hardness, true);
     m_smooth.setValue(preset.m_smooth, true);
     m_drawOrder.setIndex(preset.m_drawOrder);
@@ -2073,8 +2079,8 @@ void ToonzRasterBrushTool::removePreset() {
 //------------------------------------------------------------------
 
 void ToonzRasterBrushTool::loadLastBrush() {
-  m_rasThickness.setValue(
-      TDoublePairProperty::Value(RasterBrushMinSize, RasterBrushMaxSize));
+  m_rasThickness.setValue(roundSize(
+      TDoublePairProperty::Value(RasterBrushMinSize, RasterBrushMaxSize)));
   m_drawOrder.setIndex(BrushDrawOrder);
   m_pencil.setValue(RasterBrushPencilMode ? 1 : 0);
   m_hardness.setValue(RasterBrushHardness);

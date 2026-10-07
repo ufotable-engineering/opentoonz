@@ -360,6 +360,16 @@ DoublePairField::DoublePairField(QWidget *parent, bool isMaxRangeLimited)
   rightLineEdit->setDecimals(2);
 }
 
+//-----------------------------------------------------------------------------
+
+void DoublePairField::setDecimals(int decimals) {
+  DoubleLineEdit *leftLineEdit = dynamic_cast<DoubleLineEdit *>(m_leftLineEdit);
+  leftLineEdit->setDecimals(decimals);
+  DoubleLineEdit *rightLineEdit =
+      dynamic_cast<DoubleLineEdit *>(m_rightLineEdit);
+  rightLineEdit->setDecimals(decimals);
+}
+
 //=============================================================================
 // MeasuredDoublePairField
 //-----------------------------------------------------------------------------
