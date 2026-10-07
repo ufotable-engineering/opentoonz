@@ -26,7 +26,8 @@ RasterStrokeGenerator::RasterStrokeGenerator(const TRasterCM32P &raster,
     , m_keepAntiAlias(keepAntialias)
     , m_doAnArc(false)
     , m_isPaletteOrder(isPaletteOrder)
-    , m_modifierLockAlpha(lockAlpha) {
+    , m_modifierLockAlpha(lockAlpha)
+    , m_subPixel(false) {
   TThickPoint pp = p;
   m_points.push_back(pp);
   if (task == ERASE) m_styleId = m_eraseStyle;
@@ -64,7 +65,7 @@ void RasterStrokeGenerator::generateStroke(bool isPencil,
 
   std::vector<TThickPoint> partialPoints;
   if (size == 1) {
-    rasterBrush(rasBuffer, points, m_styleId, !isPencil);
+    rasterBrush(rasBuffer, points, m_styleId, !isPencil, m_subPixel);
     placeOver(m_raster, rasBuffer, newOrigin);
   } else if (size <= 3) {
     std::vector<TThickPoint> partialPoints;
@@ -75,7 +76,7 @@ void RasterStrokeGenerator::generateStroke(bool isPencil,
       partialPoints.push_back(points[0]);
       partialPoints.push_back(points[1]);
     }
-    rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil);
+    rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil, m_subPixel);
     placeOver(m_raster, rasBuffer, newOrigin);
   } else if (size % 2 == 1) /*-- In the case of odd numbers --*/
   {
@@ -83,7 +84,7 @@ void RasterStrokeGenerator::generateStroke(bool isPencil,
     std::vector<TThickPoint> partialPoints;
     partialPoints.push_back(points[0]);
     partialPoints.push_back(points[1]);
-    rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil);
+    rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil, m_subPixel);
     placeOver(m_raster, rasBuffer, newOrigin);
     for (int i = 0; i < strokeCount; i++) {
       partialPoints.clear();
@@ -93,21 +94,21 @@ void RasterStrokeGenerator::generateStroke(bool isPencil,
       partialPoints.push_back(points[i * 2 + 3]);
       if (i == strokeCount - 1) partialPoints.push_back(points[i * 2 + 4]);
 
-      rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil);
+      rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil, m_subPixel);
       placeOver(m_raster, rasBuffer, newOrigin);
     }
   } else {
     std::vector<TThickPoint> partialPoints;
     partialPoints.push_back(points[0]);
     partialPoints.push_back(points[1]);
-    rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil);
+    rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil, m_subPixel);
     placeOver(m_raster, rasBuffer, newOrigin);
     if (size > 2) {
       partialPoints.clear();
       std::vector<TThickPoint>::iterator it = points.begin();
       it++;
       partialPoints.insert(partialPoints.begin(), it, points.end());
-      rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil);
+      rasterBrush(rasBuffer, partialPoints, m_styleId, !isPencil, m_subPixel);
       placeOver(m_raster, rasBuffer, newOrigin);
     }
   }
@@ -144,7 +145,7 @@ TRect RasterStrokeGenerator::generateLastPieceOfStroke(bool isPencil,
   // Trasla i punti secondo il nuovo sitema di riferimento
   translatePoints(points, newOrigin);
 
-  rasterBrush(rasBuffer, points, m_styleId, !isPencil);
+  rasterBrush(rasBuffer, points, m_styleId, !isPencil, m_subPixel);
   placeOver(m_raster, rasBuffer, newOrigin);
   return box;
 }

@@ -1962,6 +1962,13 @@ BrushToolOptionsBox::BrushToolOptionsBox(QWidget *parent, TTool *tool,
       m_hardnessLabel->setEnabled(false);
       m_hardnessField->setEnabled(false);
     }
+
+    ToolOptionPairSlider *sizeField =
+        dynamic_cast<ToolOptionPairSlider *>(m_controls.value("Size"));
+    if (sizeField) {
+      sizeField->setDecimals(1);
+      sizeField->updateStatus();
+    }
   } else if (tool->getTargetType() & TTool::Vectors) {
     // Further vector options
     builder.setEnumWidgetType(ToolOptionControlBuilder::POPUPBUTTON);

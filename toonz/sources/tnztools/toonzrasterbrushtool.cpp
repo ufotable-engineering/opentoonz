@@ -631,7 +631,25 @@ double computeThickness(double pressure, const TDoublePairProperty &property) {
   return (thick0 + (thick1 - thick0) * t);
 }
 
+// Keeps sizes on the 0.1 step of the Size field.
+TDoublePairProperty::Value roundSize(const TDoublePairProperty::Value &value) {
+  return TDoublePairProperty::Value(std::round(value.first * 10.0) / 10.0,
+                                    std::round(value.second * 10.0) / 10.0);
+}
+
 }  // namespace
+
+//--------------------------------------------------------------------------------------------------
+
+// Integer sizes keep the snapped pencil stamps so existing drawings match.
+bool ToonzRasterBrushTool::isSubPixelPencil() const {
+  auto isFractional = [](double v) {
+    return !areAlmostEqual(v, std::round(v), 1e-6);
+  };
+  return m_pencil.getValue() &&
+         (isFractional(m_rasThickness.getValue().first) ||
+          isFractional(m_rasThickness.getValue().second));
+}
 
 //--------------------------------------------------------------------------------------------------
 
@@ -1118,7 +1136,9 @@ void ToonzRasterBrushTool::handleMouseEvent(MouseEventType type,
   bool shift       = e.getModifiersMask() & TMouseEvent::SHIFT_KEY;
   bool control     = e.getModifiersMask() & TMouseEvent::CTRL_KEY;
   TPointD fixedPos = pos;
-  if (m_pencil.getValue()) {
+  bool subPixel    = m_painting.pencil.isActive ? m_painting.pencil.subPixel
+                                                : isSubPixelPencil();
+  if (m_pencil.getValue() && !subPixel) {
     fixedPos = getCenteredCursorPos(pos);
     fixedPos = TPointD(tround(fixedPos.x), tround(fixedPos.y));
   }
@@ -1248,6 +1268,7 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
 
       m_painting.pencil.isActive   = true;
       m_painting.pencil.realPencil = m_pencil.getValue();
+      m_painting.pencil.subPixel   = isSubPixelPencil();
     } else {
       // init blured brush drawing (regular drawing)
 
@@ -1376,6 +1397,7 @@ void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
           ras, BRUSH, NONE, m_painting.styleId, thickPoint,
           drawOrder != OverAll, 0, m_modifierLockAlpha.getValue(),
           !m_painting.pencil.realPencil, drawOrder == PaletteOrder);
+      handler->brush.setSubPixel(m_painting.pencil.subPixel);
 
       // if the drawOrder mode = "Palette Order",
       // get styleId list which is above the current style in the palette
@@ -1485,7 +1507,7 @@ void ToonzRasterBrushTool::inputMouseMove(const TPointD &position,
       value.first  = tcrop(value.first, range.first, range.second);
       value.second = tcrop(value.second, range.first, range.second);
 
-      setValue(prop, value);
+      setValue(prop, roundSize(value));
     }
   } locals = {this};
 
@@ -1557,6 +1579,12 @@ void ToonzRasterBrushTool::draw() {
   if (m_isMyPaintStyleSelected) {
     tglDrawCircle(m_brushPos, (m_minCursorThick + 1) * 0.5);
     tglDrawCircle(m_brushPos, (m_maxCursorThick + 1) * 0.5);
+    return;
+  }
+
+  if (isSubPixelPencil()) {
+    tglDrawCircle(m_brushPos, (m_minThick + 1) * 0.5);
+    tglDrawCircle(m_brushPos, (m_maxThick + 1) * 0.5);
     return;
   }
 
@@ -1759,8 +1787,8 @@ void ToonzRasterBrushTool::loadPreset() {
 
   try  // Don't bother with RangeErrors
   {
-    m_rasThickness.setValue(
-        TDoublePairProperty::Value(std::max(preset.m_min, 1.0), preset.m_max));
+    m_rasThickness.setValue(roundSize(
+        TDoublePairProperty::Value(std::max(preset.m_min, 1.0), preset.m_max)));
     m_hardness.setValue(preset.m_hardness, true);
     m_smooth.setValue(preset.m_smooth, true);
     m_drawOrder.setIndex(preset.m_drawOrder);
@@ -2051,8 +2079,8 @@ void ToonzRasterBrushTool::removePreset() {
 //------------------------------------------------------------------
 
 void ToonzRasterBrushTool::loadLastBrush() {
-  m_rasThickness.setValue(
-      TDoublePairProperty::Value(RasterBrushMinSize, RasterBrushMaxSize));
+  m_rasThickness.setValue(roundSize(
+      TDoublePairProperty::Value(RasterBrushMinSize, RasterBrushMaxSize)));
   m_drawOrder.setIndex(BrushDrawOrder);
   m_pencil.setValue(RasterBrushPencilMode ? 1 : 0);
   m_hardness.setValue(RasterBrushHardness);
