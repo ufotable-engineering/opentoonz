@@ -36,7 +36,6 @@
     <command>MI_GeometricCircle</command>
     <command>MI_GeometricEllipse</command>
     <command>MI_GeometricPolygon</command>
-    <command>MI_GeometricSpline</command>
     <separator/>
     <command>MI_ShiftTrace</command>
     <command>MI_EditShift</command>
