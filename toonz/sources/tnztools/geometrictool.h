@@ -33,7 +33,7 @@ class PrimitiveParam {
 
 public:
   TDoubleProperty m_toolSize;
-  TIntProperty m_rasterToolSize;
+  TDoubleProperty m_rasterToolSize;
   TDoubleProperty m_opacity;
   TDoubleProperty m_hardness;
   TEnumProperty m_type;
@@ -66,6 +66,9 @@ public:
   PrimitiveParam(int targetType);
 
   void updateTranslation();
+  double getRasterToolSize() const;
+  bool snapsToPixel() const;
+  TPointD snapToPixel(const TPointD& pos) const;
 };
 
 //=============================================================================
