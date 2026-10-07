@@ -42,6 +42,8 @@ public:
   TBoolProperty m_autogroup;
   TBoolProperty m_autofill;
   TBoolProperty m_smooth;
+  TBoolProperty m_closeLine;
+  TBoolProperty m_editPoints;
   TBoolProperty m_emptyOnly;
   TBoolProperty m_pencil;
   TEnumProperty m_capStyle;
@@ -120,9 +122,11 @@ public:
   void leftButtonUp(const TPointD& p, const TMouseEvent& e) override;
   void leftButtonDoubleClick(const TPointD& p, const TMouseEvent& e) override;
   bool keyDown(QKeyEvent* event) override;
+  bool isEventAcceptable(QEvent* e) override;
   void onImageChanged() override;
   void onColorStyleChanged();
   void rightButtonDown(const TPointD& p, const TMouseEvent& e) override;
+  bool isContextMenuEnabled() const override;
   void mouseMove(const TPointD& p, const TMouseEvent& e) override;
   void onActivate() override;
   void onDeactivate() override;

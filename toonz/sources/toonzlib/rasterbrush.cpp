@@ -447,10 +447,12 @@ void makeLittleArch(const TRasterCM32P &ras, const Disk &disk1,
   double length = quadratic.getLength();
   // Sub-pixel stamps are not snapped, so short or sparse arcs leave notches.
   if (length < 2 && !subPixel) return;
+  // Stamps within a sixth of the thinner radius keep thin diagonals from
+  // notching; a larger value only adds stamps.
+  const double subPixelStampsPerRadius = 6.0;
+  double minRadius = std::min(disk1.getRadius(), disk3.getRadius());
   double density =
-      subPixel
-          ? std::max(1.5, 6.0 / std::min(disk1.getRadius(), disk3.getRadius()))
-          : 1.5;
+      subPixel ? std::max(1.5, subPixelStampsPerRadius / minRadius) : 1.5;
   double t = 0, step = 1 / (length * density), t2 = quadratic.getT(center2);
   bool idLastDiskDrown = true;
   for (t = step; t < 1; t += step) {

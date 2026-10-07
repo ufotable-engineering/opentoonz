@@ -532,6 +532,9 @@ transformation.
 */
   virtual void addContextMenuItems(QMenu *menu) {}
 
+  //! Returns false while the tool uses the right mouse button itself.
+  virtual bool isContextMenuEnabled() const { return true; }
+
   void enable(bool on) { m_enabled = on; }
   bool isEnabled() const { return m_enabled; }
 
