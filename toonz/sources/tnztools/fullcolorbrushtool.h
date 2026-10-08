@@ -51,6 +51,14 @@ public:
         : brush(ras, controller, brush) {}
   };
 
+  class PencilTrackHandler : public TTrackHandler {
+  public:
+    RasterStrokeGenerator brush;
+
+    PencilTrackHandler(const TRasterCM32P &mask, const TThickPoint &p)
+        : brush(mask, BRUSH, NONE, 1, p, false, 0, false, false) {}
+  };
+
 private:
   void updateCurrentStyle();
   void applyClassicToonzBrushSettings(mypaint::Brush &mypaintBrush);
@@ -113,9 +121,14 @@ public:
 
   TMyPaintBrushStyle *getBrushStyle();
 
+  bool isPencilModeActive() override;
+
 private:
   void updateModifiers();
-  
+  bool paintPencilTrackPoint(const TTrackPoint &point, const TTrack &track,
+                             const TRaster32P &ras);
+  void drawPencilCursor(const TDimension &rasSize);
+
   enum MouseEventType { ME_DOWN, ME_DRAG, ME_UP, ME_MOVE };
   void handleMouseEvent(MouseEventType type, const TPointD &pos,
                         const TMouseEvent &e);
@@ -141,6 +154,7 @@ protected:
   TDoubleProperty m_modifierOpacity;
   TBoolProperty m_modifierEraser;
   TBoolProperty m_modifierLockAlpha;
+  TBoolProperty m_pencil;
   TBoolProperty m_assistants;
   TEnumProperty m_preset;
 
@@ -169,6 +183,10 @@ protected:
   bool m_started;
 
   bool m_propertyUpdating = false;
+
+  TRasterCM32P m_pencilMask;
+  TPixel32 m_pencilColor;  // premultiplied
+  bool m_pencilStroke = false;
 };
 
 //------------------------------------------------------------

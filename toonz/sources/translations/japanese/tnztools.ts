@@ -705,6 +705,10 @@
         <translation>透明部分の保護</translation>
     </message>
     <message>
+        <source>Pencil</source>
+        <translation>鉛筆モード</translation>
+    </message>
+    <message>
         <source>&lt;custom&gt;</source>
         <translation>&lt;カスタム&gt;</translation>
     </message>
