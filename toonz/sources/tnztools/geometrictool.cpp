@@ -66,6 +66,7 @@ TEnv::IntVar GeometricSmooth("InknpaintGeometricSmooth", 0);
 TEnv::IntVar GeometricCloseLine("InknpaintGeometricCloseLine", 0);
 TEnv::IntVar GeometricEditPoints("InknpaintGeometricEditPoints", 0);
 TEnv::IntVar GeometricPencil("InknpaintGeometricPencil", 0);
+TEnv::IntVar GeometricFullcolorPencil("InknpaintGeometricFullcolorPencil", 0);
 TEnv::DoubleVar GeometricBrushHardness("InknpaintGeometricHardness", 100);
 TEnv::DoubleVar GeometricOpacity("InknpaintGeometricOpacity", 100);
 TEnv::IntVar GeometricCapStyle("InknpaintGeometricCapStyle", 0);
@@ -526,8 +527,8 @@ PrimitiveParam::PrimitiveParam(int targetType)
     m_snapSensitivity.addValue(HIGH_WSTR);
     m_snapSensitivity.setId("SnapSensitivity");
   }
-  if (targetType & TTool::ToonzImage) {
-    m_prop[0].bind(m_emptyOnly);
+  if (targetType & TTool::ToonzImage) m_prop[0].bind(m_emptyOnly);
+  if (targetType & (TTool::ToonzImage | TTool::RasterImage)) {
     m_prop[0].bind(m_pencil);
     m_pencil.setId("PencilMode");
   }
@@ -565,7 +566,9 @@ PrimitiveParam::PrimitiveParam(int targetType)
 
 double PrimitiveParam::getRasterToolSize() const {
   double size = m_rasterToolSize.getValue();
-  return m_pencil.getValue() ? size : tround(size);
+  return m_pencil.getValue() && (m_targetType & TTool::ToonzImage)
+             ? size
+             : tround(size);
 }
 
 //-----------------------------------------------------------------------------
@@ -1447,7 +1450,10 @@ void GeometricTool::onActivate() {
     m_typeCode    = typeCode;
     changeType(typeCode);
     m_param.m_edgeCount.setValue(GeometricEdgeCount);
-    m_param.m_pencil.setValue(GeometricPencil ? 1 : 0);
+    // Raster levels keep their own setting, since the option was hidden there.
+    m_param.m_pencil.setValue((m_param.m_targetType & TTool::RasterImage)
+                                  ? GeometricFullcolorPencil != 0
+                                  : GeometricPencil != 0);
     m_param.m_capStyle.setIndex(GeometricCapStyle);
     m_param.m_joinStyle.setIndex(GeometricJoinStyle);
     m_param.m_miterJoinLimit.setValue(GeometricMiterValue);
@@ -1572,9 +1578,12 @@ bool GeometricTool::onPropertyChanged(std::string propertyName) {
     GeometricEditPoints = m_param.m_editPoints.getValue();
   } else if (propertyName == m_param.m_emptyOnly.getName())
     GeometricSelective = m_param.m_emptyOnly.getValue();
-  else if (propertyName == m_param.m_pencil.getName())
-    GeometricPencil = m_param.m_pencil.getValue();
-  else if (propertyName == m_param.m_hardness.getName())
+  else if (propertyName == m_param.m_pencil.getName()) {
+    if (m_param.m_targetType & TTool::RasterImage)
+      GeometricFullcolorPencil = m_param.m_pencil.getValue();
+    else
+      GeometricPencil = m_param.m_pencil.getValue();
+  } else if (propertyName == m_param.m_hardness.getName())
     GeometricBrushHardness = m_param.m_hardness.getValue();
   else if (propertyName == m_param.m_opacity.getName())
     GeometricOpacity = m_param.m_opacity.getValue();
@@ -1943,10 +1952,13 @@ void GeometricTool::addStroke() {
       double opacity  = m_param.m_opacity.getValue() * 0.01;
       double hardness = m_param.m_hardness.getValue() * 0.01;
       TRect savebox;
-      if (hardness == 1) {
-        TUndoManager::manager()->add(new UndoFullColorPencil(
-            sl, id, stroke, opacity, true, m_isFrameCreated, m_isLevelCreated));
-        savebox = TRasterImageUtils::addStroke(ri, stroke, TRectD(), opacity);
+      bool pencil = m_param.m_pencil.getValue();
+      if (hardness == 1 || pencil) {
+        TUndoManager::manager()->add(
+            new UndoFullColorPencil(sl, id, stroke, opacity, !pencil,
+                                    m_isFrameCreated, m_isLevelCreated));
+        savebox = TRasterImageUtils::addStroke(ri, stroke, TRectD(), opacity,
+                                               !pencil);
       } else {
         int thickness = tround(m_param.getRasterToolSize());
         TUndoManager::manager()->add(new FullColorBluredPrimitiveUndo(
