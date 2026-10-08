@@ -1962,7 +1962,7 @@ BrushToolOptionsBox::BrushToolOptionsBox(QWidget *parent, TTool *tool,
   connect(m_removePresetButton, SIGNAL(clicked()), this,
           SLOT(onRemovePreset()));
 
-  if (tool->getTargetType() & TTool::ToonzImage) {
+  if (tool->getTargetType() & (TTool::ToonzImage | TTool::RasterImage)) {
     assert(m_pencilMode);
     bool ret = connect(m_pencilMode, SIGNAL(toggled(bool)), this,
                        SLOT(onPencilModeToggled(bool)));
@@ -1972,7 +1972,9 @@ BrushToolOptionsBox::BrushToolOptionsBox(QWidget *parent, TTool *tool,
       m_hardnessLabel->setEnabled(false);
       m_hardnessField->setEnabled(false);
     }
+  }
 
+  if (tool->getTargetType() & TTool::ToonzImage) {
     ToolOptionPairSlider *sizeField =
         dynamic_cast<ToolOptionPairSlider *>(m_controls.value("Size"));
     if (sizeField) {
