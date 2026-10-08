@@ -133,13 +133,10 @@ function Close-Status($status) {
 }
 
 function Expand-Zip($zip, $dest) {
-  # bsdtar ships with Windows 10 1803+ and is far faster than Expand-Archive
-  if (Get-Command tar.exe -ErrorAction SilentlyContinue) {
-    tar.exe -xf $zip -C $dest
-    if ($LASTEXITCODE -ne 0) { throw "tar failed with exit code $LASTEXITCODE" }
-  } else {
-    Expand-Archive -LiteralPath $zip -DestinationPath $dest
-  }
+  # tar.exe converts entry names to the ANSI code page and skips the ones it
+  # cannot represent, such as the Czech and Korean folders on Japanese Windows
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest, [Text.Encoding]::UTF8)
 }
 
 # Anything that stops the script before the finally block below would leave

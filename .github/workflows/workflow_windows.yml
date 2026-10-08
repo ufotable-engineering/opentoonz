@@ -247,7 +247,8 @@ jobs:
           INHOUSE_VERSION: ${{ steps.ver.outputs.version }}
           ARTIFACT: ${{ steps.ver.outputs.artifact }}
         run: |
-          7z a -tzip "$env:ARTIFACT.zip" .\artifact\*
+          # Leaves no entry name to be decoded with the code page of the extracting PC
+          7z a -tzip -mcu=on "$env:ARTIFACT.zip" .\artifact\*
           # Checked by the in-house updater before it keeps the downloaded zip
           (Get-FileHash "$env:ARTIFACT.zip" -Algorithm SHA256).Hash.ToLower() |
             Set-Content -NoNewline "$env:ARTIFACT.zip.sha256"
