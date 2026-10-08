@@ -744,6 +744,10 @@
         <translation>フレーム範囲</translation>
     </message>
     <message>
+        <source>Pencil Mode</source>
+        <translation>鉛筆モード</translation>
+    </message>
+    <message>
         <source>Normal</source>
         <translation>通常</translation>
     </message>

@@ -114,6 +114,38 @@ void drawEmptyCircle(TPointD pos, int thick, bool isLxEven, bool isLyEven,
 
 //-----------------------------------------------------------------------------
 
+//! Same rounding as ToonzRasterBrushTool.
+TPointD snapToPencilPixel(const TPointD &pos, const TDimension &rasSize);
+
+//-----------------------------------------------------------------------------
+
+//! rasterBrush() centers pixels on integer coordinates.
+TPointD toRasterBrushPos(const TPointD &pos, const TRasterP &ras);
+
+//-----------------------------------------------------------------------------
+
+//! Working from the pre-stroke backup keeps overlaps from darkening.
+template <typename PixelOp>
+void applyPencilMask(const TRaster32P &ras, const TRaster32P &backup,
+                     const TRasterCM32P &mask, const TRect &rect, PixelOp op) {
+  if (rect.isEmpty()) return;
+  ras->lock();
+  backup->lock();
+  mask->lock();
+  for (int y = rect.y0; y <= rect.y1; ++y) {
+    const TPixelCM32 *m = mask->pixels(y) + rect.x0;
+    const TPixel32 *b   = backup->pixels(y) + rect.x0;
+    TPixel32 *o         = ras->pixels(y) + rect.x0;
+    for (int x = rect.x0; x <= rect.x1; ++x, ++m, ++b, ++o)
+      if (m->getTone() != TPixelCM32::getMaxTone()) *o = op(*b);
+  }
+  mask->unlock();
+  backup->unlock();
+  ras->unlock();
+}
+
+//-----------------------------------------------------------------------------
+
 void drawCursor(TToolViewer* viewer, TTool* tool,
     TPointD pos, int toolCursorId, bool addOffSet = false);
 

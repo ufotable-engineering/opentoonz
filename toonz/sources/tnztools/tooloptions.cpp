@@ -2191,8 +2191,9 @@ EraserToolOptionsBox::EraserToolOptionsBox(QWidget *parent, TTool *tool,
   if (m_pencilMode) {
     ret = ret && connect(m_pencilMode, SIGNAL(toggled(bool)), this,
                          SLOT(onPencilModeToggled(bool)));
-    ret = ret && connect(m_colorMode, SIGNAL(currentIndexChanged(int)), this,
-                         SLOT(onColorModeChanged(int)));
+    if (m_colorMode)
+      ret = ret && connect(m_colorMode, SIGNAL(currentIndexChanged(int)), this,
+                           SLOT(onColorModeChanged(int)));
   }
 
   ret = ret && connect(m_toolType, SIGNAL(currentIndexChanged(int)), this,
