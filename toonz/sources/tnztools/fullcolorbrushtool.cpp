@@ -54,8 +54,8 @@
 
 //----------------------------------------------------------------------------------
 
-TEnv::IntVar FullcolorBrushMinSize("FullcolorBrushMinSize", 1);
-TEnv::IntVar FullcolorBrushMaxSize("FullcolorBrushMaxSize", 5);
+TEnv::DoubleVar FullcolorBrushMinSize("FullcolorBrushMinSize", 1);
+TEnv::DoubleVar FullcolorBrushMaxSize("FullcolorBrushMaxSize", 5);
 TEnv::IntVar FullcolorPressureSensitivity("FullcolorPressureSensitivity", 1);
 TEnv::DoubleVar FullcolorBrushHardness("FullcolorBrushHardness", 100);
 TEnv::DoubleVar FullcolorMinOpacity("FullcolorMinOpacity", 100);
@@ -120,10 +120,10 @@ public:
 //----------------------------------------------------------------------------------
 
 double computePencilThickness(double pressure,
-                              const TIntPairProperty &property) {
-  double t   = pressure * pressure * pressure;
-  int thick0 = property.getValue().first;
-  int thick1 = property.getValue().second;
+                              const TDoublePairProperty &property) {
+  double t      = pressure * pressure * pressure;
+  double thick0 = property.getValue().first;
+  double thick1 = property.getValue().second;
   return thick0 + (thick1 - thick0) * t;
 }
 
@@ -397,7 +397,9 @@ void FullColorBrushTool::handleMouseEvent(MouseEventType type,
   bool control  = e.getModifiersMask() & TMouseEvent::CTRL_KEY;
 
   TPointD fixedPos = pos;
-  if (m_started ? m_pencilStroke : isPencilModeActive()) {
+  bool pencil      = m_started ? m_pencilStroke : isPencilModeActive();
+  bool subPixel    = m_started ? m_pencilSubPixel : isSubPixelPencil();
+  if (pencil && !subPixel) {
     if (TRasterImageP ri = TRasterImageP(getImage(false)))
       fixedPos = ToolUtils::snapToPencilPixel(pos, ri->getRaster()->getSize());
   }
@@ -467,10 +469,10 @@ void FullColorBrushTool::inputMouseMove(const TPointD &position,
       TTool::getApplication()->getCurrentTool()->notifyToolChanged();
     }
 
-    void addMinMax(TIntPairProperty &prop, double add) {
-      const TIntPairProperty::Range &range = prop.getRange();
+    void addMinMax(TDoublePairProperty &prop, double add) {
+      const TDoublePairProperty::Range &range = prop.getRange();
 
-      TIntPairProperty::Value value = prop.getValue();
+      TDoublePairProperty::Value value = prop.getValue();
       value.second =
           tcrop<double>(value.second + add, range.first, range.second);
       value.first = tcrop<double>(value.first + add, range.first, range.second);
@@ -479,11 +481,11 @@ void FullColorBrushTool::inputMouseMove(const TPointD &position,
       notify(prop);
     }
 
-    void addMinMaxSeparate(TIntPairProperty &prop, double min, double max) {
+    void addMinMaxSeparate(TDoublePairProperty &prop, double min, double max) {
       if (min == 0.0 && max == 0.0) return;
-      const TIntPairProperty::Range &range = prop.getRange();
+      const TDoublePairProperty::Range &range = prop.getRange();
 
-      TIntPairProperty::Value value = prop.getValue();
+      TDoublePairProperty::Value value = prop.getValue();
       value.first += min;
       value.second += max;
       if (value.first > value.second) value.first = value.second;
@@ -541,7 +543,8 @@ void FullColorBrushTool::inputSetBusy(bool busy) {
     // with numpad shortcut keys
     updateCurrentStyle();
 
-    m_pencilStroke = isPencilModeActive() && TRaster32P(ras);
+    m_pencilStroke   = isPencilModeActive() && TRaster32P(ras);
+    m_pencilSubPixel = m_pencilStroke && isSubPixelPencil();
     if (m_pencilStroke) {
       if (!m_pencilMask || m_pencilMask->getSize() != ras->getSize()) {
         m_pencilMask = TRasterCM32P(ras->getSize());
@@ -705,14 +708,19 @@ void FullColorBrushTool::drawPencilCursor(const TDimension &rasSize) {
 
   glPushAttrib(GL_ALL_ATTRIB_BITS);
   tglEnableBlending();
+  bool subPixel    = isSubPixelPencil();
+  auto drawOutline = [&](double thick) {
+    if (subPixel)
+      tglDrawCircle(m_brushPos, (thick + 1) * 0.5);
+    else
+      ToolUtils::drawEmptyCircle(m_brushPos, tround(thick), isLxEven, isLyEven,
+                                 true);
+  };
   for (int pass = 0; pass < 2; ++pass) {
     glLineWidth((pass == 0 ? 3.0 : 1.0) * dpr);
     tglColor(pass == 0 ? TPixel32::White : TPixel32::Black);
-    if (m_minCursorThick < m_maxCursorThick)
-      ToolUtils::drawEmptyCircle(m_brushPos, m_minCursorThick, isLxEven,
-                                 isLyEven, true);
-    ToolUtils::drawEmptyCircle(m_brushPos, m_maxCursorThick, isLxEven, isLyEven,
-                               true);
+    if (m_minCursorThick < m_maxCursorThick) drawOutline(m_minCursorThick);
+    drawOutline(m_maxCursorThick);
   }
   glPopAttrib();
 }
@@ -732,7 +740,8 @@ bool FullColorBrushTool::paintPencilTrackPoint(const TTrackPoint &point,
   TThickPoint thickPoint(ToolUtils::toRasterBrushPos(point.position, ras),
                          computePencilThickness(pressure, m_thickness));
   if (firstPoint)
-    track.handler = new PencilTrackHandler(m_pencilMask, thickPoint);
+    track.handler =
+        new PencilTrackHandler(m_pencilMask, thickPoint, m_pencilSubPixel);
   PencilTrackHandler *handler =
       dynamic_cast<PencilTrackHandler *>(track.handler.getPointer());
   if (!handler) return false;
@@ -872,8 +881,8 @@ void FullColorBrushTool::loadPreset() {
 
   try  // Don't bother with RangeErrors
   {
-    m_thickness.setValue(TIntPairProperty::Value(std::max((int)preset.m_min, 1),
-                                                 (int)preset.m_max));
+    m_thickness.setValue(
+        TDoublePairProperty::Value(std::max(preset.m_min, 1.0), preset.m_max));
     m_hardness.setValue(preset.m_hardness, true);
     m_opacity.setValue(
         TDoublePairProperty::Value(preset.m_opacityMin, preset.m_opacityMax));
@@ -1103,7 +1112,7 @@ void FullColorBrushTool::removePreset() {
 
 void FullColorBrushTool::loadLastBrush() {
   m_thickness.setValue(
-      TIntPairProperty::Value(FullcolorBrushMinSize, FullcolorBrushMaxSize));
+      TDoublePairProperty::Value(FullcolorBrushMinSize, FullcolorBrushMaxSize));
   m_pressure.setValue(FullcolorPressureSensitivity ? 1 : 0);
   m_opacity.setValue(
       TDoublePairProperty::Value(FullcolorMinOpacity, FullcolorMaxOpacity));
@@ -1130,8 +1139,8 @@ void FullColorBrushTool::updateCurrentStyle() {
     }
   }
 
-  int prevMinCursorThick = m_minCursorThick;
-  int prevMaxCursorThick = m_maxCursorThick;
+  double prevMinCursorThick = m_minCursorThick;
+  double prevMaxCursorThick = m_maxCursorThick;
 
   m_enabledPressure = m_pressure.getValue();
   if (TMyPaintBrushStyle *brushStyle = getBrushStyle()) {
@@ -1139,9 +1148,9 @@ void FullColorBrushTool::updateCurrentStyle() {
                            MYPAINT_BRUSH_SETTING_RADIUS_LOGARITHMIC) +
                        m_modifierSize.getValue() * log(2.0);
     double radius    = exp(radiusLog);
-    m_minCursorThick = m_maxCursorThick = (int)round(2.0 * radius);
+    m_minCursorThick = m_maxCursorThick = round(2.0 * radius);
   } else {
-    m_minCursorThick = std::max(m_thickness.getValue().first, 1);
+    m_minCursorThick = std::max(m_thickness.getValue().first, 1.0);
     m_maxCursorThick =
         std::max(m_thickness.getValue().second, m_minCursorThick);
     if (!m_enabledPressure) m_minCursorThick = m_maxCursorThick;
@@ -1166,6 +1175,17 @@ TMyPaintBrushStyle *FullColorBrushTool::getBrushStyle() {
   if (TTool::Application *app = getApplication())
     return dynamic_cast<TMyPaintBrushStyle *>(app->getCurrentLevelStyle());
   return 0;
+}
+
+//------------------------------------------------------------------
+
+// Integer sizes keep the snapped pencil stamps, like ToonzRasterBrushTool.
+bool FullColorBrushTool::isSubPixelPencil() const {
+  auto isFractional = [](double v) {
+    return !areAlmostEqual(v, std::round(v), 1e-6);
+  };
+  return isFractional(m_thickness.getValue().first) ||
+         isFractional(m_thickness.getValue().second);
 }
 
 //------------------------------------------------------------------

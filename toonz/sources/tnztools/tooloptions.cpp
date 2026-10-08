@@ -1974,7 +1974,7 @@ BrushToolOptionsBox::BrushToolOptionsBox(QWidget *parent, TTool *tool,
     }
   }
 
-  if (tool->getTargetType() & TTool::ToonzImage) {
+  if (tool->getTargetType() & (TTool::ToonzImage | TTool::RasterImage)) {
     ToolOptionPairSlider *sizeField =
         dynamic_cast<ToolOptionPairSlider *>(m_controls.value("Size"));
     if (sizeField) {

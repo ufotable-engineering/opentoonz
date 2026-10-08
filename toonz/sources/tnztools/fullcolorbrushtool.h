@@ -55,8 +55,11 @@ public:
   public:
     RasterStrokeGenerator brush;
 
-    PencilTrackHandler(const TRasterCM32P &mask, const TThickPoint &p)
-        : brush(mask, BRUSH, NONE, 1, p, false, 0, false, false) {}
+    PencilTrackHandler(const TRasterCM32P &mask, const TThickPoint &p,
+                       bool subPixel)
+        : brush(mask, BRUSH, NONE, 1, p, false, 0, false, false) {
+      brush.setSubPixel(subPixel);
+    }
   };
 
 private:
@@ -125,6 +128,7 @@ public:
 
 private:
   void updateModifiers();
+  bool isSubPixelPencil() const;
   bool paintPencilTrackPoint(const TTrackPoint &point, const TTrack &track,
                              const TRaster32P &ras);
   void drawPencilCursor(const TDimension &rasSize);
@@ -146,7 +150,7 @@ protected:
 
   TPropertyGroup m_prop;
 
-  TIntPairProperty m_thickness;
+  TDoublePairProperty m_thickness;
   TBoolProperty m_pressure;
   TDoublePairProperty m_opacity;
   TDoubleProperty m_hardness;
@@ -160,7 +164,7 @@ protected:
 
   TPixel32 m_currentColor;
   bool m_enabledPressure;
-  int m_minCursorThick, m_maxCursorThick;
+  double m_minCursorThick, m_maxCursorThick;
 
   TPointD m_mousePos,  //!< Current mouse position, in world coordinates.
       m_brushPos;      //!< World position the brush will be painted at.
@@ -186,7 +190,8 @@ protected:
 
   TRasterCM32P m_pencilMask;
   TPixel32 m_pencilColor;  // premultiplied
-  bool m_pencilStroke = false;
+  bool m_pencilStroke   = false;
+  bool m_pencilSubPixel = false;
 };
 
 //------------------------------------------------------------
