@@ -109,6 +109,10 @@ QRadialGradient getBrushPad(int size, double hardness);
 
 //-----------------------------------------------------------------------------
 
+void drawEmptyCircle(TPointD pos, int thick, bool isLxEven, bool isLyEven,
+                     bool isPencil);
+
+//-----------------------------------------------------------------------------
 
 void drawCursor(TToolViewer* viewer, TTool* tool,
     TPointD pos, int toolCursorId, bool addOffSet = false);

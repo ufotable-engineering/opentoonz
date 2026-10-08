@@ -319,11 +319,6 @@ protected:
   bool m_propertyUpdating = false;
 
 protected:
-  static void drawLine(const TPointD &point, const TPointD &centre,
-                       bool horizontal, bool isDecimal);
-  static void drawEmptyCircle(TPointD point, int thick, bool isLxEven,
-                              bool isLyEven, bool isPencil);
-
   TPointD getCenteredCursorPos(const TPointD &originalCursorPos);
 };
 
