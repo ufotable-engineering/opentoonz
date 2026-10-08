@@ -240,6 +240,22 @@ jobs:
           name: ${{ steps.ver.outputs.artifact }}
           path: artifact
 
+      # Updaters up to 2026.10.1 extract with tar.exe, which stops at names that
+      # CP932 cannot represent. The installed copies of these folders are kept.
+      - name: Drop Folders the Old Updater Cannot Extract
+        if: steps.ver.outputs.version != 'dev'
+        run: |
+          $cp932 = [Text.Encoding]::GetEncoding(932)
+          $dirs = @(Get-ChildItem artifact\portablestuff -Recurse -Directory |
+            Where-Object { $cp932.GetString($cp932.GetBytes($_.Name)) -ne $_.Name })
+          foreach ($dir in $dirs) {
+            if (Test-Path -LiteralPath $dir.FullName) {
+              Write-Output "Dropping $($dir.FullName)"
+              Remove-Item -LiteralPath $dir.FullName -Recurse -Force
+            }
+          }
+        shell: powershell
+
       - name: Publish Release
         if: steps.ver.outputs.version != 'dev'
         env:
