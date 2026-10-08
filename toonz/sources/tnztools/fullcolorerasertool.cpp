@@ -21,6 +21,7 @@
 #include "toonz/levelproperties.h"
 #include "toonz/strokegenerator.h"
 #include "toonz/preferences.h"
+#include "toonz/rasterstrokegenerator.h"
 
 // TnzBase includes
 #include "tenv.h"
@@ -53,6 +54,7 @@ TEnv::DoubleVar FullcolorEraserOpacity("FullcolorEraserOpacity", 100);
 TEnv::StringVar FullcolorEraserType("FullcolorEraseType", "Normal");
 TEnv::IntVar FullcolorEraserInvert("FullcolorEraseInvert", 0);
 TEnv::IntVar FullcolorEraserRange("FullcolorEraseRange", 0);
+TEnv::IntVar FullcolorEraserPencil("FullcolorErasePencil", 0);
 
 //**********************************************************************************
 //    Local namespace  stuff
@@ -67,6 +69,35 @@ int computeThickness(int pressure, const TIntPairProperty &property) {
   int thick1 = property.getValue().second;
 
   return tround(thick0 + (thick1 - thick0) * t);
+}
+
+//----------------------------------------------------------------------------------
+
+void erasePencilMask(const TRaster32P &ras, const TRaster32P &backup,
+                     const TRasterCM32P &mask, const TRect &rect,
+                     double opacity) {
+  int keep = 255 - tround(opacity * 255.0);
+  ToolUtils::applyPencilMask(
+      ras, backup, mask, rect, [keep](const TPixel32 &pix) {
+        return TPixel32(pix.r * keep / 255, pix.g * keep / 255,
+                        pix.b * keep / 255, pix.m * keep / 255);
+      });
+}
+
+//----------------------------------------------------------------------------------
+
+TRect generatePencilMask(const TRasterCM32P &mask,
+                         const std::vector<TThickPoint> &points) {
+  RasterStrokeGenerator generator(mask, BRUSH, NONE, 1, points[0], false, 0,
+                                  false, false);
+  TRect rect = generator.getLastRect();
+  generator.generateLastPieceOfStroke(true);
+  for (int i = 1; i < (int)points.size(); ++i) {
+    generator.add(points[i]);
+    rect += generator.getLastRect();
+    generator.generateLastPieceOfStroke(true);
+  }
+  return rect * mask->getBounds();
 }
 
 //----------------------------------------------------------------------------------
@@ -131,16 +162,18 @@ class RectFullColorUndo final : public TFullColorRasterUndo {
   TStroke *m_stroke;
   std::wstring m_eraseType;
   bool m_invert;
+  bool m_pencilMode;
 
 public:
   RectFullColorUndo(TTileSetFullColor *tileSet, const TRectD &modifyArea,
                     TStroke stroke, std::wstring eraseType,
                     TXshSimpleLevel *level, bool invert,
-                    const TFrameId &frameId)
+                    const TFrameId &frameId, bool pencilMode = false)
       : TFullColorRasterUndo(tileSet, level, frameId, false, false, 0)
       , m_modifyArea(modifyArea)
       , m_eraseType(eraseType)
-      , m_invert(invert) {
+      , m_invert(invert)
+      , m_pencilMode(pencilMode) {
     m_stroke = new TStroke(stroke);
   }
 
@@ -155,8 +188,8 @@ public:
     } else if (m_eraseType == FREEHANDERASE || m_eraseType == POLYLINEERASE) {
       TPoint pos;
 
-      TRaster32P image =
-          convertStrokeToImage(m_stroke, ri->getRaster()->getBounds(), pos);
+      TRaster32P image = convertStrokeToImage(
+          m_stroke, ri->getRaster()->getBounds(), pos, m_pencilMode);
       if (!image) return;
 
       eraseImage(ri, image, pos, m_invert);
@@ -186,22 +219,35 @@ class FullColorEraserUndo final : public TFullColorRasterUndo {
   int m_size;
   double m_hardness;
   double m_opacity;
+  bool m_pencil;
 
 public:
   FullColorEraserUndo(TTileSetFullColor *tileSet,
                       const std::vector<TThickPoint> &points,
                       TXshSimpleLevel *level, const TFrameId &frameId, int size,
-                      double hardness, double opacity)
+                      double hardness, double opacity, bool pencil = false)
       : TFullColorRasterUndo(tileSet, level, frameId, false, false, 0)
       , m_points(points)
       , m_size(size)
       , m_hardness(hardness)
-      , m_opacity(opacity) {}
+      , m_opacity(opacity)
+      , m_pencil(pencil) {}
 
   void redo() const override {
     if (m_points.size() == 0) return;
     TRasterImageP image      = getImage();
     TRasterP ras             = image->getRaster();
+    if (m_pencil) {
+      TRaster32P ras32 = ras;
+      if (!ras32) return;
+      TRasterCM32P mask(ras32->getSize());
+      mask->clear();
+      TRect rect = generatePencilMask(mask, m_points);
+      erasePencilMask(ras32, ras32, mask, rect, m_opacity);
+      TTool::getApplication()->getCurrentXsheet()->notifyXsheetChanged();
+      notifyImageChanged();
+      return;
+    }
     QRadialGradient brushPad = getBrushPad(m_size, m_hardness);
     TRaster32P workRaster    = TRaster32P(ras->getSize());
     TRasterP backUpRas       = ras->clone();
@@ -249,12 +295,14 @@ public:
 
 void eraseStroke(const TRasterImageP &ri, TStroke *stroke,
                  std::wstring eraseType, bool invert,
-                 const TXshSimpleLevelP &level, const TFrameId &frameId) {
+                 const TXshSimpleLevelP &level, const TFrameId &frameId,
+                 bool pencilMode) {
   assert(stroke);
   TPoint pos;
   TRasterP ras = ri->getRaster();
 
-  TRaster32P image = convertStrokeToImage(stroke, ras->getBounds(), pos);
+  TRaster32P image =
+      convertStrokeToImage(stroke, ras->getBounds(), pos, pencilMode);
   if (!image) return;
 
   TRect rasterErasedArea = image->getBounds() + pos;
@@ -269,7 +317,7 @@ void eraseStroke(const TRasterImageP &ri, TStroke *stroke,
 
   TUndoManager::manager()->add(
       new RectFullColorUndo(tileSet, convert(area), *stroke, eraseType,
-                            level.getPointer(), invert, frameId));
+                            level.getPointer(), invert, frameId, pencilMode));
 
   eraseImage(ri, image, pos, invert);
 }
@@ -624,7 +672,12 @@ public:
 
   void resetMulti();
 
+  bool isPencilModeActive() override;
+
 private:
+  TRect erasePencilSegment(const TRaster32P &ras);
+  void addPencilErasePoint(const TPointD &pos, const TRaster32P &ras);
+
   TPropertyGroup m_prop;
 
   TIntProperty m_size;
@@ -633,6 +686,7 @@ private:
   TEnumProperty m_eraseType;
   TBoolProperty m_invertOption;
   TBoolProperty m_multi;
+  TBoolProperty m_pencil;
 
   TXshSimpleLevelP m_level;
   std::pair<int, int> m_currCell;
@@ -646,6 +700,8 @@ private:
 
   std::vector<TThickPoint> m_points;
   BluredBrush *m_brush;
+  RasterStrokeGenerator *m_pencilEraser = nullptr;
+  TRasterCM32P m_pencilMask;
 
   TTileSetFullColor *m_tileSet;
   TTileSaverFullColor *m_tileSaver;
@@ -677,6 +733,7 @@ FullColorEraserTool::FullColorEraserTool(std::string name)
     , m_eraseType("Type:")
     , m_invertOption("Invert", false)
     , m_multi("Frame Range", false)
+    , m_pencil("Pencil Mode", false)
     , m_currCell(-1, -1)
     , m_brush(0)
     , m_tileSet(0)
@@ -696,6 +753,7 @@ FullColorEraserTool::FullColorEraserTool(std::string name)
   m_prop.bind(m_eraseType);
   m_prop.bind(m_invertOption);
   m_prop.bind(m_multi);
+  m_prop.bind(m_pencil);
 
   m_eraseType.addValue(NORMALERASE);
   m_eraseType.addValue(RECTERASE);
@@ -706,6 +764,7 @@ FullColorEraserTool::FullColorEraserTool(std::string name)
   m_eraseType.setId("Type");
   m_invertOption.setId("Invert");
   m_multi.setId("FrameRange");
+  m_pencil.setId("PencilMode");
   m_multiArcPrimitive = MultiArcPrimitive(this);
 }
 
@@ -729,6 +788,7 @@ void FullColorEraserTool::updateTranslation() {
 
   m_invertOption.setQStringName(tr("Invert"));
   m_multi.setQStringName(tr("Frame Range"));
+  m_pencil.setQStringName(tr("Pencil Mode"));
 }
 
 //---------------------------------------------------------------------------------------------------
@@ -742,6 +802,7 @@ void FullColorEraserTool::onActivate() {
     m_eraseType.setValue(::to_wstring(FullcolorEraserType.getValue()));
     m_invertOption.setValue((bool)FullcolorEraserInvert);
     m_multi.setValue((bool)FullcolorEraserRange);
+    m_pencil.setValue((bool)FullcolorEraserPencil);
     m_firstTime = false;
   }
 
@@ -758,6 +819,58 @@ void FullColorEraserTool::onActivate() {
 
 void FullColorEraserTool::onDeactivate() {
   if (m_mousePressed) leftButtonUp(m_mousePos, m_mouseEvent);
+  m_pencilMask = TRasterCM32P();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool FullColorEraserTool::isPencilModeActive() {
+  return m_pencil.getValue() && m_eraseType.getValue() == NORMALERASE;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+TRect FullColorEraserTool::erasePencilSegment(const TRaster32P &ras) {
+  TRect rect = m_pencilEraser->getLastRect() * ras->getBounds();
+  if (rect.isEmpty()) return rect;
+  m_tileSaver->save(rect);
+  m_pencilEraser->generateLastPieceOfStroke(true);
+  erasePencilMask(ras, m_backUpRas, m_pencilMask, rect,
+                  m_opacity.getValue() * 0.01);
+  return rect;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void FullColorEraserTool::addPencilErasePoint(const TPointD &pos,
+                                              const TRaster32P &ras) {
+  if (!ras) return;
+  TPointD oldBrushPos =
+      m_points.empty()
+          ? pos
+          : TPointD(m_points.back()) - ras->getCenterD() + TPointD(0.5, 0.5);
+  m_brushPos = ToolUtils::snapToPencilPixel(pos, ras->getSize());
+  TThickPoint point(ToolUtils::toRasterBrushPos(m_brushPos, ras),
+                    m_size.getValue());
+  if (!m_pencilEraser)
+    m_pencilEraser = new RasterStrokeGenerator(m_pencilMask, BRUSH, NONE, 1,
+                                               point, false, 0, false, false);
+  else if (TPointD(point) == TPointD(m_points.back()))
+    return;
+  else
+    m_pencilEraser->add(point);
+  m_points.push_back(point);
+
+  TRect rect = erasePencilSegment(ras);
+  TRectD invalidateRect =
+      TRectD(rect.x0, rect.y0, rect.x1 + 1, rect.y1 + 1) - ras->getCenterD();
+  TPointD cursorOffset(m_size.getValue() * 0.5 + 2,
+                       m_size.getValue() * 0.5 + 2);
+  invalidateRect +=
+      TRectD(oldBrushPos - cursorOffset, oldBrushPos + cursorOffset);
+  invalidateRect +=
+      TRectD(m_brushPos - cursorOffset, m_brushPos + cursorOffset);
+  invalidate(invalidateRect.enlarge(2));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -771,7 +884,17 @@ void FullColorEraserTool::leftButtonDown(const TPointD &pos,
   if (!ri) return;
   TRectD invalidateRect;
   TRasterP ras = ri->getRaster();
-  if (m_eraseType.getValue() == NORMALERASE) {
+  if (isPencilModeActive() && TRaster32P(ras)) {
+    m_backUpRas = ras->clone();
+    if (!m_pencilMask || m_pencilMask->getSize() != ras->getSize())
+      m_pencilMask = TRasterCM32P(ras->getSize());
+    m_pencilMask->clear();
+    m_tileSet   = new TTileSetFullColor(ras->getSize());
+    m_tileSaver = new TTileSaverFullColor(ras, m_tileSet);
+    m_points.clear();
+    addPencilErasePoint(pos, ras);
+    return;
+  } else if (m_eraseType.getValue() == NORMALERASE) {
     TDimension dim = ras->getSize();
     double opacity = m_opacity.getValue() * 0.01;
     m_workRaster   = TRaster32P(dim);
@@ -848,7 +971,9 @@ void FullColorEraserTool::leftButtonDrag(const TPointD &pos,
 
   TRasterImageP ri = (TRasterImageP)getImage(true);
   if (!ri) return;
-  if (m_eraseType.getValue() == NORMALERASE) {
+  if (m_pencilEraser) {
+    addPencilErasePoint(pos, ri->getRaster());
+  } else if (m_eraseType.getValue() == NORMALERASE) {
     double thickness  = m_size.getValue();
     TPointD rasCenter = ri->getRaster()->getCenterD();
     TThickPoint point(pos + rasCenter, thickness);
@@ -919,7 +1044,23 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
   m_brushPos = m_mousePos = pos;
   TRasterImageP ri        = (TRasterImageP)getImage(true);
   if (!ri) return;
-  if (m_eraseType.getValue() == NORMALERASE) {
+  if (m_pencilEraser) {
+    addPencilErasePoint(pos, ri->getRaster());
+    delete m_pencilEraser;
+    m_pencilEraser = nullptr;
+    m_backUpRas    = TRasterP();
+
+    delete m_tileSaver;
+    TXshSimpleLevelP simLevel = TTool::getApplication()
+                                    ->getCurrentLevel()
+                                    ->getLevel()
+                                    ->getSimpleLevel();
+    TUndoManager::manager()->add(new FullColorEraserUndo(
+        m_tileSet, m_points, simLevel.getPointer(), getCurrentFid(),
+        m_size.getValue(), m_hardness.getValue() * 0.01,
+        m_opacity.getValue() * 0.01, true));
+    notifyImageChanged();
+  } else if (m_eraseType.getValue() == NORMALERASE) {
     if (m_points.size() != 1) {
       TPointD rasCenter = ri->getRaster()->getCenterD();
       TThickPoint point(pos + rasCenter, m_size.getValue());
@@ -1081,7 +1222,8 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
       if (!getImage(true)) return;
       TFrameId frameId = getCurrentFid();
       eraseStroke(ri, stroke, m_eraseType.getValue(), m_invertOption.getValue(),
-                  /*m_multi.getValue(),*/ m_level, frameId);
+                  /*m_multi.getValue(),*/ m_level, frameId,
+                  m_pencil.getValue());
       notifyImageChanged();
       if (m_invertOption.getValue())
         invalidate();
@@ -1131,9 +1273,9 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
         TXshLevel *level          = app->getCurrentLevel()->getLevel();
         TXshSimpleLevelP simLevel = level->getSimpleLevel();
         TFrameId frameId          = getFrameId();
-        eraseStroke(ri, stroke, m_eraseType.getValue(),
-                    m_invertOption.getValue(),
-                    /*m_multi.getValue(),*/ m_level, frameId);
+        eraseStroke(
+            ri, stroke, m_eraseType.getValue(), m_invertOption.getValue(),
+            /*m_multi.getValue(),*/ m_level, frameId, m_pencil.getValue());
         notifyImageChanged();
         if (m_invertOption.getValue())
           invalidate();
@@ -1230,7 +1372,7 @@ void FullColorEraserTool::leftButtonDoubleClick(const TPointD &pos,
     TXshSimpleLevelP simLevel = level->getSimpleLevel();
     TFrameId frameId          = getFrameId();
     eraseStroke(ri, stroke, m_eraseType.getValue(), m_invertOption.getValue(),
-                /*m_multi.getValue(),*/ m_level, frameId);
+                /*m_multi.getValue(),*/ m_level, frameId, m_pencil.getValue());
     notifyImageChanged();
     if (m_invertOption.getValue())
       invalidate();
@@ -1272,6 +1414,10 @@ void FullColorEraserTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 
   default:
     m_brushPos = pos;
+    if (isPencilModeActive())
+      if (TRasterImageP ri = TRasterImageP(getImage(false)))
+        m_brushPos =
+            ToolUtils::snapToPencilPixel(pos, ri->getRaster()->getSize());
     break;
   }
   if (m_eraseType.getValue() == MULTIARCERASE) {
@@ -1294,7 +1440,12 @@ void FullColorEraserTool::draw() {
     if (!Preferences::instance()->isCursorOutlineEnabled()) return;
 
     glColor3d(1.0, 0.0, 0.0);
-    tglDrawCircle(m_brushPos, (m_size.getValue() + 1) * 0.5);
+    if (isPencilModeActive()) {
+      TDimension size = img->getRaster()->getSize();
+      ToolUtils::drawEmptyCircle(m_brushPos, m_size.getValue(),
+                                 size.lx % 2 == 0, size.ly % 2 == 0, true);
+    } else
+      tglDrawCircle(m_brushPos, (m_size.getValue() + 1) * 0.5);
   } else if (m_eraseType.getValue() == RECTERASE) {
     TPixel color = ToonzCheck::instance()->getChecks() & ToonzCheck::eBlackBg
                        ? TPixel32::White
@@ -1345,6 +1496,7 @@ bool FullColorEraserTool::onPropertyChanged(std::string propertyName) {
   FullcolorEraserType    = ::to_string(m_eraseType.getValue());
   FullcolorEraserInvert  = (int)m_invertOption.getValue();
   FullcolorEraserRange   = (int)m_multi.getValue();
+  FullcolorEraserPencil  = (int)m_pencil.getValue();
   if (propertyName == "Hardness:" || propertyName == "Size:") {
     m_brushPad = getBrushPad(m_size.getValue(), m_hardness.getValue() * 0.01);
     TRectD rect(
@@ -1547,19 +1699,19 @@ void FullColorEraserTool::doMultiEraser(const TImageP &img, double t,
                                         const TVectorImageP &lastImage) {
   if (t == 0)
     eraseStroke(img, firstImage->getStroke(0), m_eraseType.getValue(),
-                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level,
-                fid);
+                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level, fid,
+                m_pencil.getValue());
   else if (t == 1)
     eraseStroke(img, lastImage->getStroke(0), m_eraseType.getValue(),
-                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level,
-                fid);
+                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level, fid,
+                m_pencil.getValue());
   else {
     assert(firstImage->getStrokeCount() == 1);
     assert(lastImage->getStrokeCount() == 1);
     TVectorImageP vi = TInbetween(firstImage, lastImage).tween(t);
     assert(vi->getStrokeCount() == 1);
     eraseStroke(img, vi->getStroke(0), m_eraseType.getValue(),
-                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level,
-                fid);
+                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level, fid,
+                m_pencil.getValue());
   }
 }

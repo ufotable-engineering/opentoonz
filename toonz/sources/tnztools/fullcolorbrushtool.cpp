@@ -119,19 +119,6 @@ public:
 
 //----------------------------------------------------------------------------------
 
-// Same rounding as ToonzRasterBrushTool.
-TPointD snapToPencilPixel(const TPointD &pos, const TDimension &rasSize) {
-  TPointD p = pos;
-  if (rasSize.lx % 2 == 0) p.x -= 0.5;
-  if (rasSize.ly % 2 == 0) p.y -= 0.5;
-  return TPointD(tround(p.x), tround(p.y));
-}
-
-// rasterBrush() centers pixels on integer coordinates.
-TPointD toRasterBrushPos(const TPointD &pos, const TRasterP &ras) {
-  return pos + ras->getCenterD() - TPointD(0.5, 0.5);
-}
-
 double computePencilThickness(double pressure,
                               const TIntPairProperty &property) {
   double t   = pressure * pressure * pressure;
@@ -145,28 +132,6 @@ TPixel32 atopPix(const TPixel32 &bot, const TPixel32 &top) {
   return TPixel32((top.r * bot.m + bot.r * k + 127) / 255,
                   (top.g * bot.m + bot.g * k + 127) / 255,
                   (top.b * bot.m + bot.b * k + 127) / 255, bot.m);
-}
-
-// Blending from the pre-stroke backup keeps overlaps from darkening.
-void putPencilMask(const TRaster32P &ras, const TRaster32P &backup,
-                   const TRasterCM32P &mask, const TRect &rect,
-                   const TPixel32 &color, bool lockAlpha) {
-  if (rect.isEmpty()) return;
-  ras->lock();
-  backup->lock();
-  mask->lock();
-  for (int y = rect.y0; y <= rect.y1; ++y) {
-    const TPixelCM32 *m = mask->pixels(y) + rect.x0;
-    const TPixel32 *b   = backup->pixels(y) + rect.x0;
-    TPixel32 *o         = ras->pixels(y) + rect.x0;
-    for (int x = rect.x0; x <= rect.x1; ++x, ++m, ++b, ++o) {
-      if (m->getTone() == TPixelCM32::getMaxTone()) continue;
-      *o = lockAlpha ? atopPix(*b, color) : overPix(*b, color);
-    }
-  }
-  mask->unlock();
-  backup->unlock();
-  ras->unlock();
 }
 
 }  // namespace
@@ -434,7 +399,7 @@ void FullColorBrushTool::handleMouseEvent(MouseEventType type,
   TPointD fixedPos = pos;
   if (m_started ? m_pencilStroke : isPencilModeActive()) {
     if (TRasterImageP ri = TRasterImageP(getImage(false)))
-      fixedPos = snapToPencilPixel(pos, ri->getRaster()->getSize());
+      fixedPos = ToolUtils::snapToPencilPixel(pos, ri->getRaster()->getSize());
   }
 
   if (shift && type == ME_DOWN && e.button() == Qt::LeftButton && !m_started) {
@@ -764,7 +729,7 @@ bool FullColorBrushTool::paintPencilTrackPoint(const TTrackPoint &point,
   assert(firstPoint == !track.handler);
 
   double pressure = m_enabledPressure ? point.pressure : 1.0;
-  TThickPoint thickPoint(toRasterBrushPos(point.position, ras),
+  TThickPoint thickPoint(ToolUtils::toRasterBrushPos(point.position, ras),
                          computePencilThickness(pressure, m_thickness));
   if (firstPoint)
     track.handler = new PencilTrackHandler(m_pencilMask, thickPoint);
@@ -777,8 +742,12 @@ bool FullColorBrushTool::paintPencilTrackPoint(const TTrackPoint &point,
   if (rect.isEmpty()) return true;
   askWrite(rect);
   handler->brush.generateLastPieceOfStroke(true);
-  putPencilMask(ras, backup, m_pencilMask, rect, m_pencilColor,
-                m_modifierLockAlpha.getValue());
+  TPixel32 color = m_pencilColor;
+  bool lockAlpha = m_modifierLockAlpha.getValue();
+  ToolUtils::applyPencilMask(
+      ras, backup, m_pencilMask, rect, [color, lockAlpha](const TPixel32 &pix) {
+        return lockAlpha ? atopPix(pix, color) : overPix(pix, color);
+      });
   return true;
 }
 

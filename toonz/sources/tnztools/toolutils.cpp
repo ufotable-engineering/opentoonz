@@ -500,6 +500,22 @@ void ToolUtils::drawEmptyCircle(TPointD pos, int thick, bool isLxEven,
 
 //-----------------------------------------------------------------------------
 
+TPointD ToolUtils::snapToPencilPixel(const TPointD &pos,
+                                     const TDimension &rasSize) {
+  TPointD p = pos;
+  if (rasSize.lx % 2 == 0) p.x -= 0.5;
+  if (rasSize.ly % 2 == 0) p.y -= 0.5;
+  return TPointD(tround(p.x), tround(p.y));
+}
+
+//-----------------------------------------------------------------------------
+
+TPointD ToolUtils::toRasterBrushPos(const TPointD &pos, const TRasterP &ras) {
+  return pos + ras->getCenterD() - TPointD(0.5, 0.5);
+}
+
+//-----------------------------------------------------------------------------
+
 void ToolUtils::drawCursor(TToolViewer* viewer, TTool* tool,
     TPointD pos, int toolCursorId, bool addOffSet)
 {
