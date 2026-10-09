@@ -443,7 +443,9 @@ void Room::showEvent(QShowEvent *event) {
     DockLayout::State savedState = m_pendingLayoutState;
     DockLayout *layout           = dockLayout();
     QTimer::singleShot(0, this, [layout, savedState]() {
-      if (layout->restoreState(savedState)) layout->redistribute();
+      // restoreState() already applies the saved panel geometry. Redistributing
+      // here would recalculate it and discard the user's saved panel positions.
+      layout->restoreState(savedState);
     });
   }
 }
@@ -2522,6 +2524,9 @@ void MainWindow::defineActions() {
   createMenuXsheetAction(MI_InsertSceneFrame, QT_TR_NOOP("Insert Frame"), "",
                          "insert_frame");
   createMenuXsheetAction(MI_RemoveSceneFrame, QT_TR_NOOP("Remove Frame"), "",
+                         "remove_frame");
+  createMenuXsheetAction(MI_RemoveSelectedSceneFrames,
+                         QT_TR_NOOP("Remove Selected Frames"), "",
                          "remove_frame");
   createMenuXsheetAction(MI_InsertGlobalKeyframe,
                          QT_TR_NOOP("Insert Multiple Keys"), "",

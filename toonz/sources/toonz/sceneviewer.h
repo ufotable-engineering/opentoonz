@@ -24,6 +24,7 @@
 #include <array>
 #include <QMatrix4x4>
 #include <QTouchDevice>
+#include <QElapsedTimer>
 
 //=====================================================================
 
@@ -67,6 +68,7 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
 
   double m_pressure;
   QPointF m_lastMousePos;
+  QPointF m_tabletPosOffset;
   QPointF m_pos;
   TPointD m_toolPos;
   bool m_toolHasAssistants = false;
@@ -180,6 +182,18 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_isStyleShortcutSwitchable;
 
   bool m_isBusyOnTabletMove;
+
+  struct TabletRest {
+    QPointF tabletPos;
+    QPoint cursorPos;
+    QElapsedTimer timer;
+    qint64 lastEventTime = 0;
+    int batchCount       = 0;
+    QPointF offsetSum;
+    int sampleCount = 0;
+  } m_tabletRest;
+  bool m_hasTabletRestOffset = false;
+  QPointF m_tabletRestOffset, m_tabletRestOffsetPos;
 
   QMatrix4x4 m_projectionMatrix;
 
@@ -354,6 +368,8 @@ protected:
   void gestureEvent(QGestureEvent *e);
   void touchEvent(QTouchEvent *e, int type);
   void tabletEvent(QTabletEvent *) override;
+  void measureTabletOffset(const QTabletEvent *e);
+  void resetTabletOffset();
   void leaveEvent(QEvent *) override;
   void enterEvent(QEvent *) override;
   void mouseMoveEvent(QMouseEvent *event) override;

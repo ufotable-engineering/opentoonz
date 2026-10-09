@@ -1237,6 +1237,8 @@ void SceneViewer::hideEvent(QHideEvent *) {
   if (toolHandle) toolHandle->disconnect(this);
 
   disconnect(app, &TApp::tabletLeft, this, &SceneViewer::resetTabletStatus);
+  // Leaving proximity is not noticed while hidden
+  resetTabletOffset();
 
 #if defined(x64)
   if (m_stopMotion) {

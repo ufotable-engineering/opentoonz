@@ -574,7 +574,7 @@ void Preferences::definePreferenceItems() {
   define(tempToolSwitchTimer, "tempToolSwitchTimer", QMetaType::Int, 500, 1,
          std::numeric_limits<int>::max());
   define(animateToolHandleSize, "animateToolHandleSize", QMetaType::Double, 1.0,
-         1.0, 5.0);
+         0.01, 6.0);
   define(animateToolColor, "animateToolColor", QMetaType::QColor,
          QColor(250, 127, 240));
   // The Preferences dialog updates both keys together. Advanced users may set
@@ -627,6 +627,14 @@ void Preferences::definePreferenceItems() {
          true);
   define(currentColumnColor, "currentColumnColor", QMetaType::QColor,
          QColor(Qt::yellow));
+  define(customCurrentCellColorEnabled, "customCurrentCellColorEnabled",
+         QMetaType::Bool, false);
+  define(currentCellColor, "currentCellColor", QMetaType::QColor,
+         QColor(Qt::cyan));
+  define(customCurrentColumnOutlineColorEnabled,
+         "customCurrentColumnOutlineColorEnabled", QMetaType::Bool, false);
+  define(currentColumnOutlineColor, "currentColumnOutlineColor",
+         QMetaType::QColor, QColor(105, 168, 223));
   define(levelNameDisplayType, "levelNameDisplayType", QMetaType::Int,
          0);  // default
   define(showFrameNumberWithLetters, "showFrameNumberWithLetters",
@@ -704,8 +712,10 @@ void Preferences::definePreferenceItems() {
 
   // Touch / Tablet Settings
   define(winInkEnabled, "winInkEnabled", QMetaType::Bool, false);
-  // This option will be shown & available only when WITH_WINTAB is defined
+  // These options will be shown & available only when WITH_WINTAB is defined
   define(useQtNativeWinInk, "useQtNativeWinInk", QMetaType::Bool, false);
+  define(alignTabletStrokesToCursor, "alignTabletStrokesToCursor",
+         QMetaType::Bool, false);
 
   // Others (not appearing in the popup)
   // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.
