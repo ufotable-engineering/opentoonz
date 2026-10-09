@@ -11127,6 +11127,10 @@ Administrator privileges are required; you may need to restart Explorer for chan
         <source>Install</source>
         <translation>インストールする</translation>
     </message>
+    <message>
+        <source>Align Tablet Strokes to the Cursor</source>
+        <translation>タブレットのストロークをカーソル位置に合わせる</translation>
+    </message>
 </context>
 <context>
     <name>PreferencesPopup::AdditionalStyleEdit</name>
