@@ -218,8 +218,9 @@ enum PreferencesItemId {
   // TounchGestureControl // Touch Gesture is a checkable command and not in
   // preferences.ini
   winInkEnabled,
-  // This option will be shown & available only when WITH_WINTAB is defined
+  // These options will be shown & available only when WITH_WINTAB is defined
   useQtNativeWinInk,
+  alignTabletStrokesToCursor,
 
   //----------
   // Others (not appeared in the popup)

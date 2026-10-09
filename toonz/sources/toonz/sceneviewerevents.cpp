@@ -66,6 +66,7 @@
 #include <QMimeData>
 #include <QGestureEvent>
 #include <QPainter>
+#include <QCursor>
 
 // definito - per ora - in tapp.cpp
 extern QString updateToolEnableStatus(TTool *tool);
@@ -94,11 +95,13 @@ void initToonzEvent(TMouseEvent &toonzEvent, QMouseEvent *event,
 
 void initToonzEvent(TMouseEvent &toonzEvent, QTabletEvent *event,
                     int widgetHeight, double pressure, int devPixRatio,
-                    bool isHighFrequent = false) {
-  toonzEvent.m_pos = TPointD(
-      event->posF().x() * (float)devPixRatio,
-      (float)widgetHeight - 1.0f - event->posF().y() * (float)devPixRatio);
-  toonzEvent.m_mousePos = event->posF();
+                    bool isHighFrequent      = false,
+                    const QPointF &posOffset = QPointF()) {
+  QPointF pos = event->posF() - posOffset;
+  toonzEvent.m_pos =
+      TPointD(pos.x() * (float)devPixRatio,
+              (float)widgetHeight - 1.0f - pos.y() * (float)devPixRatio);
+  toonzEvent.m_mousePos = pos;
   toonzEvent.m_pressure = pressure;
 
   toonzEvent.setModifiers(event->modifiers() & Qt::ShiftModifier,
@@ -306,8 +309,16 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
       // tabletPress events. Treat it as if it happened so a following
       // mousePressEvent gets ignored
       if (m_tabletState == Released || m_tabletState == None) {
+        // The offset varies across the screen when the mappings differ in
+        // scale, so it is used only near where it was measured
+        m_tabletPosOffset =
+            m_hasTabletRestOffset && (e->globalPosF() - m_tabletRestOffsetPos)
+                                             .manhattanLength() <= 200
+                ? m_tabletRestOffset
+                : QPointF();
         TMouseEvent mouseEvent;
-        initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
+        initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio(),
+                       false, m_tabletPosOffset);
         m_tabletState = Touched;
         onPress(mouseEvent);
       } else if (m_tabletState == Touched) {
@@ -342,10 +353,12 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
     if (m_tabletState == StartStroke || m_tabletState == OnStroke) {
       m_tabletState = Released;
       TMouseEvent mouseEvent;
-      initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
+      initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio(),
+                     false, m_tabletPosOffset);
       onRelease(mouseEvent);
     } else
       m_tabletEvent = false;
+    m_tabletPosOffset = QPointF();
 #endif
   } break;
   case QEvent::TabletMove: {
@@ -359,12 +372,15 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
 #else
     // for Windowsm, use tabletEvent only for the left Button
     if (m_tabletState != StartStroke && m_tabletState != OnStroke) {
+#ifdef WITH_WINTAB
+      measureTabletOffset(e);
+#endif
       m_tabletEvent = false;
       break;
     }
 #endif
 
-    QPointF curPos = e->posF() * getDevPixRatio();
+    QPointF curPos = (e->posF() - m_tabletPosOffset) * getDevPixRatio();
 #if defined(_WIN32)
     // Use the application attribute Qt::AA_CompressTabletEvents instead of the
     // delay timer
@@ -375,7 +391,7 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
     if (curPos != m_lastMousePos) {
       TMouseEvent mouseEvent;
       initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio(),
-                     m_isBusyOnTabletMove);
+                     m_isBusyOnTabletMove, m_tabletPosOffset);
       if (!m_isBusyOnTabletMove) {
         m_isBusyOnTabletMove = true;
         QTimer::singleShot(20, this, SLOT(releaseBusyOnTabletMove()));
@@ -414,6 +430,68 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
   default:
     break;
   }
+}
+
+//-----------------------------------------------------------------------------
+// Qt maps WinTab input onto the screen by itself, which can be a few pixels
+// off the system cursor that hovering follows and the user aims with. The
+// difference is measured only while the pen rests, because queued tablet
+// events lag behind the cursor while the pen moves.
+
+void SceneViewer::measureTabletOffset(const QTabletEvent *e) {
+  Preferences *pref = Preferences::instance();
+  if (!pref->isAlignTabletStrokesToCursorEnabled() ||
+      pref->isQtNativeWinInkEnabled() || pref->isWinInkEnabled()) {
+    resetTabletOffset();
+    return;
+  }
+  // Drivers may hold the cursor still while the tip is down
+  if (e->buttons() != Qt::NoButton) {
+    m_tabletRest.timer.invalidate();
+    return;
+  }
+
+  QPointF tabletPos = e->globalPosF();
+  QPoint cursorPos  = QCursor::pos();
+  TabletRest &rest  = m_tabletRest;
+  if (!rest.timer.isValid() ||
+      (tabletPos - rest.tabletPos).manhattanLength() > 3.0 ||
+      (cursorPos - rest.cursorPos).manhattanLength() > 3) {
+    rest.tabletPos     = tabletPos;
+    rest.cursorPos     = cursorPos;
+    rest.lastEventTime = 0;
+    rest.batchCount    = 0;
+    rest.offsetSum     = QPointF();
+    rest.sampleCount   = 0;
+    rest.timer.start();
+    return;
+  }
+
+  // Tablet events are delivered in batches after repaints. Packets older than
+  // the cursor read at the start of the rest arrive at the latest in the next
+  // batch, so the first two batches are skipped.
+  qint64 time = rest.timer.nsecsElapsed();
+  if (time - rest.lastEventTime > 1000000) rest.batchCount++;
+  rest.lastEventTime = time;
+  if (rest.batchCount < 2) return;
+
+  rest.offsetSum += tabletPos - QPointF(cursorPos);
+  rest.sampleCount++;
+  if (rest.timer.elapsed() < 60) return;
+
+  // Beyond Qt's own pen/mouse mode limit the cursor is more likely not
+  // following the pen than off by the mapping
+  QPointF offset        = rest.offsetSum / rest.sampleCount;
+  m_hasTabletRestOffset = offset.manhattanLength() * getDevPixRatio() <= 20;
+  m_tabletRestOffset    = offset;
+  m_tabletRestOffsetPos = tabletPos;
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneViewer::resetTabletOffset() {
+  m_hasTabletRestOffset = false;
+  m_tabletRest.timer.invalidate();
 }
 
 //-----------------------------------------------------------------------------
@@ -992,9 +1070,11 @@ quit:
 // hover-moving of the pen.
 // When QEvent::TabletLeaveProximity is detected, call this function
 // in order to force initializing such irregular mouse press.
-// NOTE: For now QEvent::TabletLeaveProximity is NOT detected on Windows. See
-// QTBUG-53628.
+// The tablet offset is measured again after leaving, because Qt chooses
+// between its own mapping and the cursor position again on the next
+// proximity enter.
 void SceneViewer::resetTabletStatus() {
+  resetTabletOffset();
   if (!m_buttonClicked) return;
   m_mouseButton   = Qt::NoButton;
   m_tabletEvent   = false;

@@ -1510,7 +1510,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Use Qt's Native Windows Ink Support*\n(CAUTION: This options is "
           "for "
           "maintenance purpose. \n Do not activate this option or the tablet "
-          "won't work properly.)")}};
+          "won't work properly.)")},
+      {alignTabletStrokesToCursor, tr("Align Tablet Strokes to the Cursor")}};
 
   return uiStringTable.value(id, QString());
 }
@@ -2710,6 +2711,7 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
   lay->addWidget(enableTouchGestures, 0, 0, 1, 2);
   if (winInkAvailable) insertUI(winInkEnabled, lay);
 #ifdef WITH_WINTAB
+  insertUI(alignTabletStrokesToCursor, lay);
   insertUI(useQtNativeWinInk, lay);
 #endif
 
