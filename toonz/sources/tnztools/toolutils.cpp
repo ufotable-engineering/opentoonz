@@ -1539,8 +1539,10 @@ int ToolUtils::UndoPath::getSize() const { return sizeof(*this) + 500; }
 //
 
 ToolUtils::UndoControlPointEditor::UndoControlPointEditor(
-    TXshSimpleLevel *level, const TFrameId &frameId)
-    : TToolUndo(level, frameId), m_isStrokeDelete(false) {
+    TXshSimpleLevel *level, const TFrameId &frameId, bool clearSelection)
+    : TToolUndo(level, frameId)
+    , m_isStrokeDelete(false)
+    , m_clearSelection(clearSelection) {
   TVectorImageP image = level->getFrame(frameId, true);
   assert(image);
   if (!image) return;
@@ -1587,7 +1589,7 @@ void ToolUtils::UndoControlPointEditor::undo() const {
     app->getCurrentFrame()->setFid(m_frameId);
 
   TSelection *selection = app->getCurrentSelection()->getSelection();
-  if (selection) selection->selectNone();
+  if (m_clearSelection && selection) selection->selectNone();
   TVectorImageP image = m_level->getFrame(m_frameId, true);
   assert(image);
   if (!image) return;
@@ -1618,7 +1620,7 @@ void ToolUtils::UndoControlPointEditor::redo() const {
   } else
     app->getCurrentFrame()->setFid(m_frameId);
   TSelection *selection = app->getCurrentSelection()->getSelection();
-  if (selection) selection->selectNone();
+  if (m_clearSelection && selection) selection->selectNone();
   TVectorImageP image = m_level->getFrame(m_frameId, true);
   assert(image);
   if (!image) return;
