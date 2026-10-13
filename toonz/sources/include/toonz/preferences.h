@@ -548,6 +548,9 @@ public:
   bool isQtNativeWinInkEnabled() const {
     return getBoolValue(useQtNativeWinInk);
   }
+  bool isAlignTabletStrokesToCursorEnabled() const {
+    return getBoolValue(alignTabletStrokesToCursor);
+  }
 
   // Others (not appeared in the popup)
   // Shortcut popup settings

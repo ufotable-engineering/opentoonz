@@ -1237,6 +1237,7 @@ void SceneViewer::hideEvent(QHideEvent *) {
   if (toolHandle) toolHandle->disconnect(this);
 
   disconnect(app, &TApp::tabletLeft, this, &SceneViewer::resetTabletStatus);
+  resetTabletOffset();
 
 #if defined(x64)
   if (m_stopMotion) {
