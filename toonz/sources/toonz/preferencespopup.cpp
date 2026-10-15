@@ -816,6 +816,12 @@ void PreferencesPopup::onOnionColorChanged() {
 
 //-----------------------------------------------------------------------------
 
+void PreferencesPopup::onShiftAndTraceGhostColorModeChanged() {
+  TApp::instance()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
+}
+
+//-----------------------------------------------------------------------------
+
 void invalidateIcons();  // TODO: Find the appropriate header for this
                          // declaration
 
@@ -1467,8 +1473,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {frontOnionColor, tr("Following Frames Correction:")},
       {onionInksOnly, tr("Display Lines Only")},
       {onionSkinDuringPlayback, tr("Show Onion Skin During Playback")},
-      {useOnionColorsForShiftAndTraceGhosts,
-       tr("Use Onion Skin Colors for Reference Drawings of Shift and Trace")},
+      {shiftAndTraceGhostColorMode,
+       tr("Color Mode for Reference Drawings of Shift and Trace:")},
       {animatedGuidedDrawing, tr("Vector Guided Style:")},
 
       // Colors
@@ -1647,6 +1653,11 @@ QList<ComboBoxItem> PreferencesPopup::getComboItemList(
         {tr("Exponential"), 6},
         {tr("Expression "), 7},
         {tr("File"), 8}}},
+      {shiftAndTraceGhostColorMode,
+       {{tr("Original Colors"), Preferences::ShiftAndTraceGhost_OriginalColors},
+        {tr("Onion Skin Colors"),
+         Preferences::ShiftAndTraceGhost_OnionSkinColors},
+        {tr("Half Color"), Preferences::ShiftAndTraceGhost_HalfColor}}},
       {animatedGuidedDrawing,
        {{tr("Arrow Markers"), 0}, {tr("Animated Guide"), 1}}}};
 
@@ -2447,7 +2458,8 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   insertUI(frontOnionColor, lay);
   insertUI(onionInksOnly, lay);
   insertUI(onionSkinDuringPlayback, lay);
-  insertUI(useOnionColorsForShiftAndTraceGhosts, lay);
+  insertUI(shiftAndTraceGhostColorMode, lay,
+           getComboItemList(shiftAndTraceGhostColorMode));
   insertUI(animatedGuidedDrawing, lay, getComboItemList(animatedGuidedDrawing));
 
   lay->setRowStretch(lay->rowCount(), 1);
@@ -2463,6 +2475,9 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(onionInksOnly,
                            &PreferencesPopup::notifySceneChanged);
+  m_onEditedFuncMap.insert(
+      shiftAndTraceGhostColorMode,
+      &PreferencesPopup::onShiftAndTraceGhostColorModeChanged);
 
   bool onionActive = m_pref->getBoolValue(onionSkinEnabled);
   if (!onionActive) {

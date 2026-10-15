@@ -116,6 +116,12 @@ public:
     ShowLevelNameOnColumnHeader
   };
 
+  enum ShiftAndTraceGhostColorMode {
+    ShiftAndTraceGhost_OriginalColors = 0,
+    ShiftAndTraceGhost_OnionSkinColors,
+    ShiftAndTraceGhost_HalfColor
+  };
+
   //--- callbacks
   // General
   void enableAutosave();
@@ -507,8 +513,9 @@ public:
   bool getOnionSkinDuringPlayback() {
     return getBoolValue(onionSkinDuringPlayback);
   }
-  bool areOnionColorsUsedForShiftAndTraceGhosts() const {
-    return getBoolValue(useOnionColorsForShiftAndTraceGhosts);
+  ShiftAndTraceGhostColorMode getShiftAndTraceGhostColorMode() const {
+    return ShiftAndTraceGhostColorMode(
+        getIntValue(shiftAndTraceGhostColorMode));
   }
   bool getAnimatedGuidedDrawing() const {
     return getIntValue(animatedGuidedDrawing) == 1;

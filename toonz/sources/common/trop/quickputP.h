@@ -9,12 +9,13 @@ void quickPut(const TRasterP &dn, const TRasterP &up, const TAffine &aff,
               TRop::ResampleFilterType filterType,
               const TPixel32 &colorScale = TPixel32::Black,
               bool doPremultiply = false, bool whiteTransp = false,
-              bool firstColumn = false, bool doRasterDarkenBlendedView = false);
+              bool firstColumn = false, bool doRasterDarkenBlendedView = false,
+              bool halfColor = false);
 
 void quickPut(const TRasterP &dn, const TRasterP &up, const TAffine &aff,
               TRop::ResampleFilterType filterType, const TPixel32 &colorScale,
               bool doPremultiply, bool whiteTransp, bool firstColumn,
-              bool doRasterDarkenBlendedView);
+              bool doRasterDarkenBlendedView, bool halfColor);
 
 void quickResample(const TRasterP &dn, const TRasterP &up, const TAffine &aff,
                    TRop::ResampleFilterType filterType);

@@ -86,6 +86,7 @@ public:
                                 //! current one
   bool m_isEditingLevel;
   bool m_isVisibleinOSM;  // Whether the current frame is in the onion skin
+  bool m_isShiftAndTraceGhost  = false;
   int m_isGuidedDrawingEnabled = 0;
   int m_guidedFrontStroke      = -1;
   int m_guidedBackStroke       = -1;
@@ -110,8 +111,6 @@ public:
   static double m_firstFrontOnionSkin;
   static double m_firstBackOnionSkin;
   static double m_lastBackVisibleSkin;
-
-  static bool m_isShiftAndTraceEnabled;
 
   TPixel32 m_filterColor;
 

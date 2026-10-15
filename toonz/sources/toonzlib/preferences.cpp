@@ -668,8 +668,8 @@ void Preferences::definePreferenceItems() {
   define(onionInksOnly, "onionInksOnly", QMetaType::Bool, false);
   define(onionSkinDuringPlayback, "onionSkinDuringPlayback", QMetaType::Bool,
          false);
-  define(useOnionColorsForShiftAndTraceGhosts,
-         "useOnionColorsForShiftAndTraceGhosts", QMetaType::Bool, true);
+  define(shiftAndTraceGhostColorMode, "shiftAndTraceGhostColorMode",
+         QMetaType::Int, static_cast<int>(ShiftAndTraceGhost_OnionSkinColors));
   define(animatedGuidedDrawing, "animatedGuidedDrawing", QMetaType::Int,
          0);  // Arrow Markers
 
@@ -865,6 +865,12 @@ void Preferences::resolveCompatibility() {
         true)
       setValue(cellInputMethod, 2);
   }
+  // "useOnionColorsForShiftAndTraceGhosts" is changed to
+  // "shiftAndTraceGhostColorMode", adding the Half Color option.
+  if (m_settings->contains("useOnionColorsForShiftAndTraceGhosts") &&
+      !m_settings->contains("shiftAndTraceGhostColorMode") &&
+      !m_settings->value("useOnionColorsForShiftAndTraceGhosts").toBool())
+    setValue(shiftAndTraceGhostColorMode, ShiftAndTraceGhost_OriginalColors);
 }
 
 //-----------------------------------------------------------------

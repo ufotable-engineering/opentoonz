@@ -98,6 +98,15 @@ double getOnionSkinOpacity(const Stage::Player &player) {
 
 //----------------------------------------------------------------
 
+Preferences::ShiftAndTraceGhostColorMode getGhostColorMode(
+    const Stage::Player &player) {
+  if (!player.m_isShiftAndTraceGhost)
+    return Preferences::ShiftAndTraceGhost_OnionSkinColors;
+  return Preferences::instance()->getShiftAndTraceGhostColorMode();
+}
+
+//----------------------------------------------------------------
+
 QImage rasterToQImage(const TRaster32P &ras) {
   QImage image(ras->getRawData(), ras->getLx(), ras->getLy(),
                QImage::Format_ARGB32_Premultiplied);
@@ -574,9 +583,11 @@ void RasterPainter::flushRasterImages() {
     if (TRaster32P src32 = m_nodes[i].m_raster)
       TRop::quickPut(viewedRaster, src32, aff, colorscale,
                      m_nodes[i].m_doPremultiply, m_nodes[i].m_whiteTransp,
-                     m_nodes[i].m_isFirstColumn, m_doRasterDarkenBlendedView);
+                     m_nodes[i].m_isFirstColumn, m_doRasterDarkenBlendedView,
+                     m_nodes[i].m_halfColor);
     else if (TRasterGR8P srcGr8 = m_nodes[i].m_raster)
-      TRop::quickPut(viewedRaster, srcGr8, aff, colorscale);
+      TRop::quickPut(viewedRaster, srcGr8, aff, colorscale, false, false, false,
+                     false, m_nodes[i].m_halfColor);
     else if (TRasterCM32P srcCm = m_nodes[i].m_raster) {
       assert(m_nodes[i].m_palette);
       int oldframe = m_nodes[i].m_palette->getFrame();
@@ -645,7 +656,8 @@ void RasterPainter::flushRasterImages() {
 
       if (tc == 0 || tc == ToonzCheck::eBlackBg ||
           !m_nodes[i].m_isCurrentColumn) {
-        TRop::quickPut(viewedRaster, srcCm, plt, aff, colorscale, inksOnly);
+        TRop::quickPut(viewedRaster, srcCm, plt, aff, colorscale, inksOnly,
+                       m_nodes[i].m_halfColor);
       } else {
         TRop::CmappedQuickputSettings settings;
 
@@ -670,6 +682,7 @@ void RasterPainter::flushRasterImages() {
             settings.m_transpCheckPaint);
 
         settings.m_isOnionSkin = m_nodes[i].m_onionMode != Node::eOnionSkinNone;
+        settings.m_halfColor     = m_nodes[i].m_halfColor;
         settings.m_gapCheckIndex = gapCheckIndex;
 
         settings.m_inkCheckColor = Preferences::instance()->getInkCheckColor();
@@ -937,13 +950,16 @@ void RasterPainter::onVectorImage(TVectorImage *vi,
 
   if (player.m_onionSkinDistance != c_noOnionSkin) {
     TPixel32 frontOnionColor, backOnionColor;
+    Preferences::ShiftAndTraceGhostColorMode colorMode =
+        getGhostColorMode(player);
+    bool halfColor = false;
 
     if (player.m_onionSkinDistance != 0 &&
-        (!player.m_isShiftAndTraceEnabled ||
-         Preferences::instance()->areOnionColorsUsedForShiftAndTraceGhosts())) {
+        colorMode != Preferences::ShiftAndTraceGhost_OriginalColors) {
       prefs.getOnionData(frontOnionColor, backOnionColor, inksOnly);
       bgColor =
           (player.m_onionSkinDistance < 0) ? backOnionColor : frontOnionColor;
+      halfColor = colorMode == Preferences::ShiftAndTraceGhost_HalfColor;
     }
 
     double m[4] = {1.0, 1.0, 1.0, 1.0}, c[4];
@@ -952,6 +968,10 @@ void RasterPainter::onVectorImage(TVectorImage *vi,
     m[3] = getOnionSkinOpacity(player);
     c[0] = (1.0 - m[3]) * bgColor.r, c[1] = (1.0 - m[3]) * bgColor.g,
     c[2] = (1.0 - m[3]) * bgColor.b;
+    if (halfColor) {
+      m[0] = m[1] = m[2] = 0.5;
+      c[0] = 0.5 * bgColor.r, c[1] = 0.5 * bgColor.g, c[2] = 0.5 * bgColor.b;
+    }
     c[3] = 0.0;
 
     cf = new TGenericColorFunction(m, c);
@@ -1089,6 +1109,7 @@ void RasterPainter::onRasterImage(TRasterImage *ri,
 
   int alpha                 = 255;
   Node::OnionMode onionMode = Node::eOnionSkinNone;
+  bool halfColor            = false;
   if (player.m_onionSkinDistance != c_noOnionSkin) {
     // GetOnionSkinFade is good for vector while raster works the opposite way
     // 1 opaque -> 0 completely transparent
@@ -1096,8 +1117,9 @@ void RasterPainter::onRasterImage(TRasterImage *ri,
     // (where the value 0.9 was carved)
     double onionSkinOpacity = getOnionSkinOpacity(player);
     alpha = tcrop(tround(onionSkinOpacity * 255.0), 0, 255);
-    if (player.m_isShiftAndTraceEnabled &&
-        !Preferences::instance()->areOnionColorsUsedForShiftAndTraceGhosts())
+    Preferences::ShiftAndTraceGhostColorMode colorMode =
+        getGhostColorMode(player);
+    if (colorMode == Preferences::ShiftAndTraceGhost_OriginalColors)
       onionMode = Node::eOnionSkinNone;
     else {
       onionMode =
@@ -1105,6 +1127,8 @@ void RasterPainter::onRasterImage(TRasterImage *ri,
               ? Node::eOnionSkinFront
               : ((player.m_onionSkinDistance < 0) ? Node::eOnionSkinBack
                                                   : Node::eOnionSkinNone);
+      halfColor = colorMode == Preferences::ShiftAndTraceGhost_HalfColor &&
+                  onionMode != Node::eOnionSkinNone;
     }
   } else if (player.m_opacity < 255)
     alpha = player.m_opacity;
@@ -1128,7 +1152,7 @@ void RasterPainter::onRasterImage(TRasterImage *ri,
   m_nodes.push_back(Node(r, 0, alpha, aff, ri->getSavebox(), bbox,
                          player.m_frame, player.m_isCurrentColumn, onionMode,
                          doPremultiply, whiteTransp, ignoreAlpha,
-                         player.m_filterColor));
+                         player.m_filterColor, halfColor));
 }
 
 //-----------------------------------------------------------------------------
@@ -1148,6 +1172,7 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
 
   int alpha                 = 255;
   Node::OnionMode onionMode = Node::eOnionSkinNone;
+  bool halfColor            = false;
   if (player.m_onionSkinDistance != c_noOnionSkin) {
     // GetOnionSkinFade is good for the vector while the raster works at the
     //    Opposite 1 opaque -> 0 completely transparent
@@ -1157,8 +1182,9 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
     double onionSkinOpacity = getOnionSkinOpacity(player);
     alpha = tcrop(tround(onionSkinOpacity * 255.0), 0, 255);
 
-    if (player.m_isShiftAndTraceEnabled &&
-        !Preferences::instance()->areOnionColorsUsedForShiftAndTraceGhosts())
+    Preferences::ShiftAndTraceGhostColorMode colorMode =
+        getGhostColorMode(player);
+    if (colorMode == Preferences::ShiftAndTraceGhost_OriginalColors)
       onionMode = Node::eOnionSkinNone;
     else {
       onionMode =
@@ -1166,6 +1192,8 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
               ? Node::eOnionSkinFront
               : ((player.m_onionSkinDistance < 0) ? Node::eOnionSkinBack
                                                   : Node::eOnionSkinNone);
+      halfColor = colorMode == Preferences::ShiftAndTraceGhost_HalfColor &&
+                  onionMode != Node::eOnionSkinNone;
     }
 
   } else if (player.m_opacity < 255)
@@ -1173,7 +1201,8 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
 
   m_nodes.push_back(Node(r, ti->getPalette(), alpha, aff, ti->getSavebox(),
                          bbox, player.m_frame, player.m_isCurrentColumn,
-                         onionMode, false, false, false, player.m_filterColor));
+                         onionMode, false, false, false, player.m_filterColor,
+                         halfColor));
 }
 
 //**********************************************************************************************
