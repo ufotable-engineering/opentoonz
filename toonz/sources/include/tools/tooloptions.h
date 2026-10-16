@@ -784,10 +784,14 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   QList<QPushButton *> m_snapPresetBtns;
   QList<ToolOptionControl *> m_controls;
   QWidget *m_trajectoryBox;
+  QRadioButton *m_ghostRadioBtns[2];
+  QPushButton *m_resetGhostBtns[2];
 
   DVGui::IntField *m_paperThicknessField;
   DVGui::ColorField *m_backColorField, *m_frontColorField;
   QComboBox *m_colorModeCombo;
+
+  void resetGhost(int index);
 
 public:
   ShiftTraceSettingsPane(QWidget *parent = 0);

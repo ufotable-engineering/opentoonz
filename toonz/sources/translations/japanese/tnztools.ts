@@ -1688,6 +1688,22 @@ Do you want to proceed?</source>
         <source>Color Mode:</source>
         <translation>表示方法:</translation>
     </message>
+    <message>
+        <source>Previous Drawing</source>
+        <translation>前のコマ</translation>
+    </message>
+    <message>
+        <source>Following Drawing</source>
+        <translation>後のコマ</translation>
+    </message>
+    <message>
+        <source>Reset Previous</source>
+        <translation>前のコマの変形をリセット</translation>
+    </message>
+    <message>
+        <source>Reset Following</source>
+        <translation>後のコマの変形をリセット</translation>
+    </message>
 </context>
 <context>
     <name>ShiftTraceToolOptionBox</name>

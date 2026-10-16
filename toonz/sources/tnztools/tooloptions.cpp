@@ -2983,6 +2983,29 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   trajectoryLayout->setContentsMargins(0, 0, 0, 0);
   trajectoryLayout->setSpacing(6);
 
+  m_ghostRadioBtns[0]      = new QRadioButton(tr("Previous Drawing"), this);
+  m_ghostRadioBtns[1]      = new QRadioButton(tr("Following Drawing"), this);
+  m_resetGhostBtns[0]      = new QPushButton(tr("Reset Previous"), this);
+  m_resetGhostBtns[1]      = new QPushButton(tr("Reset Following"), this);
+  QGridLayout *ghostLayout = new QGridLayout;
+  ghostLayout->setContentsMargins(0, 0, 0, 0);
+  ghostLayout->setHorizontalSpacing(6);
+  ghostLayout->setVerticalSpacing(4);
+  for (int i = 0; i < 2; i++) {
+    m_ghostRadioBtns[i]->setFocusPolicy(Qt::NoFocus);
+    m_resetGhostBtns[i]->setFixedHeight(21);
+    m_resetGhostBtns[i]->setFocusPolicy(Qt::NoFocus);
+    ghostLayout->addWidget(m_ghostRadioBtns[i], i, 0);
+    ghostLayout->addWidget(m_resetGhostBtns[i], i, 1);
+    connect(m_ghostRadioBtns[i], &QRadioButton::clicked, this, [this, i]() {
+      static_cast<ShiftTraceTool *>(m_tool)->setCurrentGhostIndex(i);
+    });
+    connect(m_resetGhostBtns[i], &QPushButton::clicked, this,
+            [this, i]() { resetGhost(i); });
+  }
+  ghostLayout->setColumnStretch(2, 1);
+  trajectoryLayout->addLayout(ghostLayout);
+
   TPropertyGroup *pg     = m_tool->getProperties(0);
   ToolHandle *toolHandle = TTool::getApplication()->getCurrentTool();
 
@@ -3077,6 +3100,18 @@ void ShiftTraceSettingsPane::onToolSwitched() {
 
 void ShiftTraceSettingsPane::updateStatus() {
   for (ToolOptionControl *control : m_controls) control->updateStatus();
+
+  OnionSkinMask osm =
+      TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
+  for (int i = 0; i < 2; i++)
+    m_resetGhostBtns[i]->setEnabled(
+        !osm.getShiftTraceGhostAff(i).isIdentity() ||
+        !(osm.getShiftTraceGhostCenter(i) == TPointD()));
+  int ghostIndex =
+      static_cast<ShiftTraceTool *>(m_tool)->getCurrentGhostIndex();
+  if (0 <= ghostIndex && ghostIndex < 2)
+    m_ghostRadioBtns[ghostIndex]->setChecked(true);
+
   if (!m_snapRatioProp) return;
   QString current = QString::fromStdWString(m_snapRatioProp->getValue());
   for (QPushButton *btn : m_snapPresetBtns)
@@ -3095,6 +3130,19 @@ void ShiftTraceSettingsPane::onSnapPresetClicked() {
   m_snapRatioProp->setValue(value);
   m_tool->onPropertyChanged(m_snapRatioProp->getName());
   updateStatus();
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::resetGhost(int index) {
+  TTool::Application *app = TTool::getApplication();
+  OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
+  osm.setShiftTraceGhostCenter(index, TPointD());
+  osm.setShiftTraceGhostAff(index, TAffine());
+  app->getCurrentOnionSkin()->setOnionSkinMask(osm);
+  app->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
+  TTool *tool = app->getCurrentTool()->getTool();
+  if (tool) tool->reset();
 }
 
 //-----------------------------------------------------------------------------
