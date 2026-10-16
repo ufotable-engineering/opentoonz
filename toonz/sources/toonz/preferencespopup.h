@@ -153,6 +153,7 @@ private:
   // Onion Skin
   void onOnionSkinVisibilityChanged();
   void onOnionColorChanged();
+  void onShiftAndTraceGhostColorModeChanged();
   // Colors
   void onTranspCheckDataChanged();
   void onChessboardChanged();

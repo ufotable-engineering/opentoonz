@@ -10524,8 +10524,20 @@ Also the initial output destination for new scenes will be set to $scenefolder a
         <translation>保存</translation>
     </message>
     <message>
-        <source>Use Onion Skin Colors for Reference Drawings of Shift and Trace</source>
-        <translation>ライトテーブルの前後フレームにもオニオンスキンの色を用いる</translation>
+        <source>Color Mode for Reference Drawings of Shift and Trace:</source>
+        <translation>ライトテーブルの前後フレームの表示方法：</translation>
+    </message>
+    <message>
+        <source>Original Colors</source>
+        <translation>本来の色</translation>
+    </message>
+    <message>
+        <source>Onion Skin Colors</source>
+        <translation>オニオンスキンの色</translation>
+    </message>
+    <message>
+        <source>Half Color</source>
+        <translation>ハーフカラー</translation>
     </message>
     <message>
         <source>Tablet Settings</source>

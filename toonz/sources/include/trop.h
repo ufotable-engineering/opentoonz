@@ -160,7 +160,8 @@ DVAPI void quickPut(const TRasterP &out, const TRasterP &up, const TAffine &aff,
                     const TPixel32 &colorScale = TPixel::Black,
                     bool doPremultiply = false, bool whiteTransp = false,
                     bool firstColumn               = false,
-                    bool doRasterDarkenBlendedView = false);
+                    bool doRasterDarkenBlendedView = false,
+                    bool halfColor                 = false);
 
 //! Like the over function but up image must be cmapped.
 /*! Only uses closest_pixel filter.
@@ -170,7 +171,7 @@ DVAPI void quickPut(const TRasterP &out, const TRasterP &up, const TAffine &aff,
 DVAPI void quickPut(const TRasterP &out, const TRasterCM32P &up,
                     const TPaletteP &plt, const TAffine &aff,
                     const TPixel32 &globalColorScale = TPixel::Black,
-                    bool inksOnly                    = false);
+                    bool inksOnly = false, bool halfColor = false);
 
 // for transparency check, ink check and paint check
 
@@ -183,6 +184,7 @@ public:
 
   bool m_inksOnly, m_transparencyCheck, m_blackBgCheck, m_isOnionSkin;
   int m_gapCheckIndex = -1;
+  bool m_halfColor    = false;
 
   bool m_inkCheckEnabled;
   bool m_ink1CheckEnabled;
