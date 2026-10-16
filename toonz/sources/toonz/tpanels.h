@@ -358,6 +358,9 @@ class ShiftTraceSettingsPanel final : public TPanel {
 
 public:
   ShiftTraceSettingsPanel(QWidget *parent);
+
+protected:
+  void showEvent(QShowEvent *) override;
 };
 
 //=========================================================
