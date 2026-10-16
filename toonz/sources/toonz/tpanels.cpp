@@ -1718,6 +1718,15 @@ ShiftTraceSettingsPanel::ShiftTraceSettingsPanel(QWidget *parent)
   setIsMaximizable(false);
 }
 
+//-----------------------------------------------------------------------------
+// The contents change width with the language, and the style sheet is applied
+// only after the panels of the rooms are created, so the minimum size is taken
+// from the layout once the panel is shown
+
+void ShiftTraceSettingsPanel::showEvent(QShowEvent *) {
+  setMinimumSize(minimumSizeHint());
+}
+
 //=============================================================================
 // ShiftTraceSettingsFactory
 //-----------------------------------------------------------------------------
@@ -1730,7 +1739,6 @@ public:
     panel->setObjectName(getPanelType());
     panel->setWindowTitle(QObject::tr("Shift and Trace Settings"));
     panel->allowMultipleInstances(false);
-    panel->setMinimumSize(230, 120);
     return panel;
   }
   void initialize(TPanel *panel) override {}
