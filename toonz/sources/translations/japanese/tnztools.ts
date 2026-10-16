@@ -1659,6 +1659,37 @@ Do you want to proceed?</source>
     </message>
 </context>
 <context>
+    <name>ShiftTraceSettingsPane</name>
+    <message>
+        <source>Original Colors</source>
+        <translation>本来の色</translation>
+    </message>
+    <message>
+        <source>Onion Skin Colors</source>
+        <translation>オニオンスキンの色</translation>
+    </message>
+    <message>
+        <source>Half Color</source>
+        <translation>ハーフカラー</translation>
+    </message>
+    <message>
+        <source>Paper Thickness:</source>
+        <translation>紙厚:</translation>
+    </message>
+    <message>
+        <source>Previous Drawing Color:</source>
+        <translation>前のコマの色:</translation>
+    </message>
+    <message>
+        <source>Following Drawing Color:</source>
+        <translation>後のコマの色:</translation>
+    </message>
+    <message>
+        <source>Color Mode:</source>
+        <translation>表示方法:</translation>
+    </message>
+</context>
+<context>
     <name>ShiftTraceToolOptionBox</name>
     <message>
         <source>Reset Previous</source>

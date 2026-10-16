@@ -75,6 +75,11 @@ class QHBoxLayout;
 class QComboBox;
 class QStackedWidget;
 
+namespace DVGui {
+class IntField;
+class ColorField;
+}  // namespace DVGui
+
 //=============================================================================
 
 // Preprocessor definitions
@@ -778,6 +783,11 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   TStringProperty *m_snapRatioProp;
   QList<QPushButton *> m_snapPresetBtns;
   QList<ToolOptionControl *> m_controls;
+  QWidget *m_trajectoryBox;
+
+  DVGui::IntField *m_paperThicknessField;
+  DVGui::ColorField *m_backColorField, *m_frontColorField;
+  QComboBox *m_colorModeCombo;
 
 public:
   ShiftTraceSettingsPane(QWidget *parent = 0);
@@ -791,6 +801,9 @@ protected slots:
   void updateStatus();
   void onToolSwitched();
   void onSnapPresetClicked();
+  void updateDisplayFields();
+  void onPaperThicknessChanged(bool isDragging);
+  void onColorModeChanged(int index);
 };
 
 //=============================================================================
