@@ -170,6 +170,7 @@ private slots:
 
   void onAutoSaveExternallyChanged();
   void onAutoSavePeriodExternallyChanged();
+  void onOnionSkinExternallyChanged();
   void onProjectRootChanged();
 
   void onEditAdditionalStyleSheet();

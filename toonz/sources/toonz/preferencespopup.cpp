@@ -864,6 +864,24 @@ void PreferencesPopup::onAutoSavePeriodExternallyChanged() {
 
 //-----------------------------------------------------------------------------
 
+void PreferencesPopup::onOnionSkinExternallyChanged() {
+  getUI<IntLineEdit*>(onionPaperThickness)
+      ->setValue(m_pref->getIntValue(onionPaperThickness));
+  getUI<ColorField*>(backOnionColor)
+      ->setColor(m_pref->getColorValue(backOnionColor));
+  getUI<ColorField*>(frontOnionColor)
+      ->setColor(m_pref->getColorValue(frontOnionColor));
+  CheckBox* inksOnlyCB = getUI<CheckBox*>(onionInksOnly);
+  QSignalBlocker inksOnlyBlocker(inksOnlyCB);
+  inksOnlyCB->setChecked(m_pref->getBoolValue(onionInksOnly));
+  QComboBox* combo = getUI<QComboBox*>(shiftAndTraceGhostColorMode);
+  QSignalBlocker blocker(combo);
+  combo->setCurrentIndex(
+      combo->findData(m_pref->getIntValue(shiftAndTraceGhostColorMode)));
+}
+
+//-----------------------------------------------------------------------------
+
 void PreferencesPopup::onProjectRootChanged() {
   int index = 0;
   // if (m_projectRootStuff->isChecked())
@@ -2468,16 +2486,20 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   m_onEditedFuncMap.insert(onionSkinEnabled,
                            &PreferencesPopup::onOnionSkinVisibilityChanged);
   m_onEditedFuncMap.insert(onionPaperThickness,
-                           &PreferencesPopup::notifySceneChanged);
+                           &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(backOnionColor,
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(frontOnionColor,
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(onionInksOnly,
-                           &PreferencesPopup::notifySceneChanged);
+                           &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(
       shiftAndTraceGhostColorMode,
       &PreferencesPopup::onShiftAndTraceGhostColorModeChanged);
+
+  connect(TApp::instance()->getCurrentOnionSkin(),
+          &TOnionSkinMaskHandle::onionSkinMaskChanged, this,
+          &PreferencesPopup::onOnionSkinExternallyChanged);
 
   bool onionActive = m_pref->getBoolValue(onionSkinEnabled);
   if (!onionActive) {
