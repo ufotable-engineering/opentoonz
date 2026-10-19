@@ -791,6 +791,9 @@ void ShiftTraceTool::setCurrentGhostIndex(int index) {
   m_ghostIndex = index;
   updateBox();
   invalidate();
+  TTool::getApplication()
+      ->getCurrentTool()
+      ->notifyToolChanged();  // Refreshes toolbar values
 }
 
 bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {

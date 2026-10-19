@@ -1712,6 +1712,22 @@ Do you want to proceed?</source>
         <source>Shared with the onion skin. Has no effect when the Color Mode is Original Colors</source>
         <translation>オニオンスキンと共通です。表示方法が「本来の色」のときは効きません</translation>
     </message>
+    <message>
+        <source>Selected Drawing</source>
+        <translation>選択中のコマ</translation>
+    </message>
+    <message>
+        <source>Both</source>
+        <translation>両方</translation>
+    </message>
+    <message>
+        <source>Drawing to Move:</source>
+        <translation>動かす絵:</translation>
+    </message>
+    <message>
+        <source>Reset:</source>
+        <translation>リセット:</translation>
+    </message>
 </context>
 <context>
     <name>ShiftTraceToolOptionBox</name>

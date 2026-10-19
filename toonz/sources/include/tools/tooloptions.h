@@ -75,6 +75,8 @@ class QHBoxLayout;
 class QComboBox;
 class QStackedWidget;
 
+class ShiftTraceTool;
+
 namespace DVGui {
 class IntField;
 class ColorField;
@@ -779,11 +781,13 @@ protected slots:
 class DVAPI ShiftTraceSettingsPane final : public QFrame {
   Q_OBJECT
 
-  TTool *m_tool;
+  ShiftTraceTool *m_tool;
   TStringProperty *m_snapRatioProp;
   QList<QPushButton *> m_snapPresetBtns;
   QList<ToolOptionControl *> m_controls;
   QWidget *m_editShiftContents;
+  QPushButton *m_ghostBtns[2];
+  QPushButton *m_resetSelectedBtn, *m_resetBothBtn;
 
   DVGui::IntField *m_densityField;
   DVGui::ColorField *m_colorFields[2];

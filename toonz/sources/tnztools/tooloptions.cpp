@@ -60,6 +60,7 @@
 #include <QVBoxLayout>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QButtonGroup>
 #include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
@@ -2761,6 +2762,26 @@ void StylePickerToolOptionsBox::updateRealTimePickLabel(const int ink,
 // ShiftTraceToolOptionBox
 //-----------------------------------------------------------------------------
 
+namespace {
+
+bool isGhostMoved(const OnionSkinMask &osm, int index) {
+  return !osm.getShiftTraceGhostAff(index).isIdentity() ||
+         !(osm.getShiftTraceGhostCenter(index) == TPointD());
+}
+
+void resetShiftTraceGhost(int index) {
+  TTool::Application *app = TTool::getApplication();
+  OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
+  osm.setShiftTraceGhostCenter(index, TPointD());
+  osm.setShiftTraceGhostAff(index, TAffine());
+  app->getCurrentOnionSkin()->setOnionSkinMask(osm);
+  app->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
+  TTool *tool = app->getCurrentTool()->getTool();
+  if (tool) tool->reset();
+}
+
+}  // namespace
+
 ShiftTraceToolOptionBox::ShiftTraceToolOptionBox(QWidget *parent, TTool *tool)
     : ToolOptionsBox(parent), m_tool(tool) {
   setFrameStyle(QFrame::StyledPanel);
@@ -2822,14 +2843,7 @@ void ShiftTraceToolOptionBox::hideEvent(QShowEvent *) {
 }
 
 void ShiftTraceToolOptionBox::resetGhost(int index) {
-  TTool::Application *app = TTool::getApplication();
-  OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
-  osm.setShiftTraceGhostCenter(index, TPointD());
-  osm.setShiftTraceGhostAff(index, TAffine());
-  app->getCurrentOnionSkin()->setOnionSkinMask(osm);
-  app->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
-  TTool *tool = app->getCurrentTool()->getTool();
-  if (tool) tool->reset();
+  resetShiftTraceGhost(index);
 
   if (index == 0)
     m_resetPrevGhostBtn->setDisabled(true);
@@ -2859,17 +2873,8 @@ void ShiftTraceToolOptionBox::updateColors() {
 void ShiftTraceToolOptionBox::updateStatus() {
   TTool::Application *app = TTool::getApplication();
   OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
-  if (osm.getShiftTraceGhostAff(0).isIdentity() &&
-      osm.getShiftTraceGhostCenter(0) == TPointD())
-    m_resetPrevGhostBtn->setDisabled(true);
-  else
-    m_resetPrevGhostBtn->setEnabled(true);
-
-  if (osm.getShiftTraceGhostAff(1).isIdentity() &&
-      osm.getShiftTraceGhostCenter(1) == TPointD())
-    m_resetAfterGhostBtn->setDisabled(true);
-  else
-    m_resetAfterGhostBtn->setEnabled(true);
+  m_resetPrevGhostBtn->setEnabled(isGhostMoved(osm, 0));
+  m_resetAfterGhostBtn->setEnabled(isGhostMoved(osm, 1));
 
   // Check the ghost index
   ShiftTraceTool *stTool = (ShiftTraceTool *)m_tool;
@@ -2923,6 +2928,12 @@ DVGui::CheckBox *newCommandCheckBox(CommandId cmdId, QWidget *parent) {
   return cb;
 }
 
+QIcon colorChipIcon(const TPixel32 &color) {
+  QPixmap pixmap(10, 10);
+  pixmap.fill(QColor(color.r, color.g, color.b));
+  return QIcon(pixmap);
+}
+
 void setOnionSkinPreference(PreferencesItemId id, const QVariant &value,
                             bool saveToFile = true) {
   Preferences::instance()->setValue(id, value, saveToFile);
@@ -2936,7 +2947,8 @@ void setOnionSkinPreference(PreferencesItemId id, const QVariant &value,
 
 ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     : QFrame(parent)
-    , m_tool(TTool::getTool("T_ShiftTrace", TTool::ToonzImage))
+    , m_tool(static_cast<ShiftTraceTool *>(
+          TTool::getTool("T_ShiftTrace", TTool::ToonzImage)))
     , m_snapRatioProp(0) {
   QVBoxLayout *layout = new QVBoxLayout(this);
   layout->setContentsMargins(8, 8, 8, 8);
@@ -3038,11 +3050,49 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
 
   //---- Edit Shift
 
+  QButtonGroup *ghostGroup = new QButtonGroup(this);
+  QHBoxLayout *ghostLayout = new QHBoxLayout;
+  ghostLayout->setContentsMargins(0, 0, 0, 0);
+  ghostLayout->setSpacing(4);
+  for (int i = 0; i < 2; i++) {
+    m_ghostBtns[i] = new QPushButton(drawingNames[i], this);
+    m_ghostBtns[i]->setCheckable(true);
+    m_ghostBtns[i]->setFixedHeight(21);
+    m_ghostBtns[i]->setFocusPolicy(Qt::NoFocus);
+    ghostGroup->addButton(m_ghostBtns[i]);
+    ghostLayout->addWidget(m_ghostBtns[i], 0);
+    connect(m_ghostBtns[i], &QPushButton::clicked, this,
+            [this, i]() { m_tool->setCurrentGhostIndex(i); });
+  }
+  ghostLayout->addStretch(1);
+
+  m_resetSelectedBtn       = new QPushButton(tr("Selected Drawing"), this);
+  m_resetBothBtn           = new QPushButton(tr("Both"), this);
+  QHBoxLayout *resetLayout = new QHBoxLayout;
+  resetLayout->setContentsMargins(0, 0, 0, 0);
+  resetLayout->setSpacing(4);
+  for (QPushButton *btn : {m_resetSelectedBtn, m_resetBothBtn}) {
+    btn->setFixedHeight(21);
+    btn->setFocusPolicy(Qt::NoFocus);
+    resetLayout->addWidget(btn, 0);
+  }
+  resetLayout->addStretch(1);
+  connect(m_resetSelectedBtn, &QPushButton::clicked, this,
+          [this]() { resetShiftTraceGhost(m_tool->getCurrentGhostIndex()); });
+  connect(m_resetBothBtn, &QPushButton::clicked, cm->getAction(MI_ResetShift),
+          &QAction::trigger);
+
   m_editShiftContents          = new QWidget(this);
   QGridLayout *editShiftLayout = new QGridLayout(m_editShiftContents);
   editShiftLayout->setContentsMargins(0, 0, 0, 0);
   editShiftLayout->setHorizontalSpacing(6);
   editShiftLayout->setVerticalSpacing(6);
+  editShiftLayout->addWidget(new QLabel(tr("Drawing to Move:"), this), 0, 0,
+                             Qt::AlignRight | Qt::AlignVCenter);
+  editShiftLayout->addLayout(ghostLayout, 0, 1);
+  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 1, 0,
+                             Qt::AlignRight | Qt::AlignVCenter);
+  editShiftLayout->addLayout(resetLayout, 1, 1);
   editShiftLayout->setColumnStretch(1, 1);
 
   TPropertyGroup *pg     = m_tool->getProperties(0);
@@ -3070,9 +3120,9 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     ratioLayout->addWidget(field, 0);
     ratioLayout->addStretch(1);
     editShiftLayout->addWidget(
-        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 0, 0,
+        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 2, 0,
         Qt::AlignRight | Qt::AlignVCenter);
-    editShiftLayout->addLayout(ratioLayout, 0, 1);
+    editShiftLayout->addLayout(ratioLayout, 2, 1);
     m_controls.push_back(field);
   }
 
@@ -3087,7 +3137,7 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     m_controls.push_back(cb);
   }
   optionLayout->addStretch(1);
-  editShiftLayout->addLayout(optionLayout, 1, 0, 1, 2);
+  editShiftLayout->addLayout(optionLayout, 3, 0, 1, 2);
 
   QAction *editShiftAction = cm->getAction(MI_EditShift);
   QGroupBox *editShiftBox  = new QGroupBox(editShiftAction->text(), this);
@@ -3152,6 +3202,16 @@ void ShiftTraceSettingsPane::onToolSwitched() {
 
 void ShiftTraceSettingsPane::updateStatus() {
   for (ToolOptionControl *control : m_controls) control->updateStatus();
+
+  const OnionSkinMask &osm =
+      TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
+  int ghostIndex = m_tool->getCurrentGhostIndex();
+  if (0 <= ghostIndex && ghostIndex < 2) {
+    m_ghostBtns[ghostIndex]->setChecked(true);
+    m_resetSelectedBtn->setEnabled(isGhostMoved(osm, ghostIndex));
+  }
+  m_resetBothBtn->setEnabled(isGhostMoved(osm, 0) || isGhostMoved(osm, 1));
+
   if (!m_snapRatioProp) return;
   QString current = QString::fromStdWString(m_snapRatioProp->getValue());
   for (QPushButton *btn : m_snapPresetBtns)
@@ -3177,8 +3237,10 @@ void ShiftTraceSettingsPane::onSnapPresetClicked() {
 void ShiftTraceSettingsPane::updateDisplayFields() {
   Preferences *pref = Preferences::instance();
   m_densityField->setValue(100 - pref->getIntValue(onionPaperThickness));
-  for (int i = 0; i < 2; i++)
+  for (int i = 0; i < 2; i++) {
     m_colorFields[i]->setColor(pref->getColorValue(kGhostColorIds[i]));
+    m_ghostBtns[i]->setIcon(colorChipIcon(m_colorFields[i]->getColor()));
+  }
   int colorMode = pref->getIntValue(shiftAndTraceGhostColorMode);
   m_inksOnlyCB->setChecked(pref->getBoolValue(onionInksOnly));
   m_inksOnlyCB->setEnabled(colorMode !=
