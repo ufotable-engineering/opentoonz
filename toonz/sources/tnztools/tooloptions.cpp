@@ -28,6 +28,8 @@
 #include "toonzqt/lutcalibrator.h"
 #include "toonzqt/viewcommandids.h"
 #include "toonzqt/brushpresetbridge.h"
+#include "toonzqt/intfield.h"
+#include "toonzqt/colorfield.h"
 
 // Tnz includes (for command ids)
 #include "../toonz/menubarcommandids.h"
@@ -56,6 +58,8 @@
 #include <QDockWidget>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
@@ -2891,6 +2895,42 @@ void ShiftTraceToolOptionBox::onAfterRadioBtnClicked() {
 //=============================================================================
 // ShiftTraceSettingsPane
 //-----------------------------------------------------------------------------
+
+namespace {
+
+const PreferencesItemId kGhostColorIds[2] = {backOnionColor, frontOnionColor};
+
+// The commands can also be toggled from the menu or a shortcut, so the box
+// follows the action instead of keeping its own state
+template <class Box>
+void bindToAction(Box *box, QAction *action) {
+  auto sync = [box, action]() {
+    box->setChecked(action->isChecked());
+    box->setEnabled(action->isEnabled());
+  };
+  QObject::connect(action, &QAction::changed, box, sync);
+  QObject::connect(box, &Box::clicked, action, [action](bool checked) {
+    if (action->isChecked() != checked) action->trigger();
+  });
+  sync();
+}
+
+DVGui::CheckBox *newCommandCheckBox(CommandId cmdId, QWidget *parent) {
+  QAction *action     = CommandManager::instance()->getAction(cmdId);
+  DVGui::CheckBox *cb = new DVGui::CheckBox(action->text(), parent);
+  cb->setFocusPolicy(Qt::NoFocus);
+  bindToAction(cb, action);
+  return cb;
+}
+
+void setOnionSkinPreference(PreferencesItemId id, const QVariant &value,
+                            bool saveToFile = true) {
+  Preferences::instance()->setValue(id, value, saveToFile);
+  TTool::getApplication()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
+}
+
+}  // namespace
+
 // T_ShiftTrace binds one instance for every target type, so any target
 // resolves to the same tool and the same properties
 
@@ -2902,14 +2942,115 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   layout->setContentsMargins(8, 8, 8, 8);
   layout->setSpacing(6);
 
+  CommandManager *cm = CommandManager::instance();
+  layout->addWidget(newCommandCheckBox(MI_ShiftTrace, this), 0);
+  QHBoxLayout *subToggleLayout = new QHBoxLayout;
+  subToggleLayout->setContentsMargins(20, 0, 0, 0);
+  subToggleLayout->setSpacing(12);
+  subToggleLayout->addWidget(newCommandCheckBox(MI_ShowShiftOrigin, this), 0);
+  subToggleLayout->addWidget(newCommandCheckBox(MI_NoShift, this), 0);
+  subToggleLayout->addStretch(1);
+  layout->addLayout(subToggleLayout);
+
+  const QString drawingNames[2] = {tr("Previous Drawing"),
+                                   tr("Following Drawing")};
+
+  //---- Display
+
+  m_densityField = new DVGui::IntField(this);
+  m_densityField->setRange(0, 100);
+  m_densityField->setToolTip(
+      tr("Shared with the Paper Thickness of the onion skin (Paper Thickness = "
+         "100 - Density)"));
+  // Paper Thickness fades the drawings as it grows, so the panel shows its
+  // complement to read as a density. Wheel and page steps on the slider never
+  // report the end of a drag, so the value is saved on every change
+  connect(m_densityField, &DVGui::IntField::valueChanged, this, [this]() {
+    setOnionSkinPreference(onionPaperThickness,
+                           100 - m_densityField->getValue());
+  });
+
+  QHBoxLayout *colorLayout = new QHBoxLayout;
+  colorLayout->setContentsMargins(0, 0, 0, 0);
+  colorLayout->setSpacing(6);
+  for (int i = 0; i < 2; i++) {
+    m_colorFields[i] = new DVGui::ColorField(this, false, TPixel32(), 21);
+    m_colorFields[i]->hideChannelsFields(true);
+    m_colorFields[i]->setToolTip(
+        tr("Double-click to edit in the Style Editor. Shared with the onion "
+           "skin colors"));
+    colorLayout->addWidget(new QLabel(drawingNames[i], this), 0);
+    colorLayout->addWidget(m_colorFields[i], 0);
+    colorLayout->addSpacing(12);
+
+    PreferencesItemId id = kGhostColorIds[i];
+    connect(m_colorFields[i], &DVGui::ColorField::colorChanged, this,
+            [id](const TPixel32 &color, bool isDragging) {
+              setOnionSkinPreference(
+                  id, QColor(color.r, color.g, color.b, color.m), !isDragging);
+            });
+  }
+  colorLayout->addStretch(1);
+
+  m_colorModeCombo = new QComboBox(this);
+  m_colorModeCombo->addItem(tr("Original Colors"),
+                            Preferences::ShiftAndTraceGhost_OriginalColors);
+  m_colorModeCombo->addItem(tr("Onion Skin Colors"),
+                            Preferences::ShiftAndTraceGhost_OnionSkinColors);
+  m_colorModeCombo->addItem(tr("Half Color"),
+                            Preferences::ShiftAndTraceGhost_HalfColor);
+  connect(m_colorModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, [this](int index) {
+            setOnionSkinPreference(shiftAndTraceGhostColorMode,
+                                   m_colorModeCombo->itemData(index));
+          });
+
+  m_inksOnlyCB = new DVGui::CheckBox(tr("Display Lines Only"), this);
+  m_inksOnlyCB->setFocusPolicy(Qt::NoFocus);
+  m_inksOnlyCB->setToolTip(
+      tr("Shared with the onion skin. Has no effect when the Color Mode is "
+         "Original Colors"));
+  connect(m_inksOnlyCB, &QCheckBox::clicked, this,
+          [](bool checked) { setOnionSkinPreference(onionInksOnly, checked); });
+
+  QHBoxLayout *modeLayout = new QHBoxLayout;
+  modeLayout->setContentsMargins(0, 0, 0, 0);
+  modeLayout->setSpacing(12);
+  modeLayout->addWidget(m_colorModeCombo, 0);
+  modeLayout->addWidget(m_inksOnlyCB, 0);
+  modeLayout->addStretch(1);
+
+  QGroupBox *displayBox      = new QGroupBox(tr("Display"), this);
+  QGridLayout *displayLayout = new QGridLayout(displayBox);
+  displayLayout->setHorizontalSpacing(6);
+  displayLayout->setVerticalSpacing(6);
+  displayLayout->addWidget(new QLabel(tr("Density:"), this), 0, 0,
+                           Qt::AlignRight | Qt::AlignVCenter);
+  displayLayout->addWidget(m_densityField, 0, 1);
+  displayLayout->addWidget(new QLabel(tr("Color:"), this), 1, 0,
+                           Qt::AlignRight | Qt::AlignVCenter);
+  displayLayout->addLayout(colorLayout, 1, 1);
+  displayLayout->addWidget(new QLabel(tr("Color Mode:"), this), 2, 0,
+                           Qt::AlignRight | Qt::AlignVCenter);
+  displayLayout->addLayout(modeLayout, 2, 1);
+  displayLayout->setColumnStretch(1, 1);
+  layout->addWidget(displayBox, 0);
+
+  //---- Edit Shift
+
+  m_editShiftContents          = new QWidget(this);
+  QGridLayout *editShiftLayout = new QGridLayout(m_editShiftContents);
+  editShiftLayout->setContentsMargins(0, 0, 0, 0);
+  editShiftLayout->setHorizontalSpacing(6);
+  editShiftLayout->setVerticalSpacing(6);
+  editShiftLayout->setColumnStretch(1, 1);
+
   TPropertyGroup *pg     = m_tool->getProperties(0);
   ToolHandle *toolHandle = TTool::getApplication()->getCurrentTool();
 
   m_snapRatioProp =
       dynamic_cast<TStringProperty *>(pg->getProperty("Snap Ratio"));
   if (m_snapRatioProp) {
-    layout->addWidget(new QLabel(m_snapRatioProp->getQStringName(), this), 0);
-
     QHBoxLayout *ratioLayout = new QHBoxLayout;
     ratioLayout->setContentsMargins(0, 0, 0, 0);
     ratioLayout->setSpacing(4);
@@ -2928,17 +3069,34 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     field->setFixedWidth(60);
     ratioLayout->addWidget(field, 0);
     ratioLayout->addStretch(1);
-    layout->addLayout(ratioLayout);
+    editShiftLayout->addWidget(
+        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 0, 0,
+        Qt::AlignRight | Qt::AlignVCenter);
+    editShiftLayout->addLayout(ratioLayout, 0, 1);
     m_controls.push_back(field);
   }
 
+  QHBoxLayout *optionLayout = new QHBoxLayout;
+  optionLayout->setContentsMargins(0, 0, 0, 0);
+  optionLayout->setSpacing(12);
   for (int i = 0; i < pg->getPropertyCount(); i++) {
     TBoolProperty *bp = dynamic_cast<TBoolProperty *>(pg->getProperty(i));
     if (!bp) continue;
     ToolOptionCheckbox *cb = new ToolOptionCheckbox(m_tool, bp, toolHandle);
-    layout->addWidget(cb, 0);
+    optionLayout->addWidget(cb, 0);
     m_controls.push_back(cb);
   }
+  optionLayout->addStretch(1);
+  editShiftLayout->addLayout(optionLayout, 1, 0, 1, 2);
+
+  QAction *editShiftAction = cm->getAction(MI_EditShift);
+  QGroupBox *editShiftBox  = new QGroupBox(editShiftAction->text(), this);
+  editShiftBox->setCheckable(true);
+  editShiftBox->setFocusPolicy(Qt::NoFocus);
+  QVBoxLayout *editShiftBoxLayout = new QVBoxLayout(editShiftBox);
+  editShiftBoxLayout->addWidget(m_editShiftContents, 0);
+  bindToAction(editShiftBox, editShiftAction);
+  layout->addWidget(editShiftBox, 0);
 
   layout->addStretch(1);
 }
@@ -2962,12 +3120,20 @@ void ShiftTraceSettingsPane::showEvent(QShowEvent *) {
   onToolSwitched();
   connect(currTool, SIGNAL(toolSwitched()), this, SLOT(onToolSwitched()));
   connect(currTool, SIGNAL(toolChanged()), this, SLOT(updateStatus()));
+
+  TOnionSkinMaskHandle *osmHandle =
+      TTool::getApplication()->getCurrentOnionSkin();
+  osmHandle->disconnect(this);
+  updateDisplayFields();
+  connect(osmHandle, SIGNAL(onionSkinMaskChanged()), this,
+          SLOT(updateDisplayFields()));
 }
 
 //-----------------------------------------------------------------------------
 
 void ShiftTraceSettingsPane::hideEvent(QHideEvent *) {
   TTool::getApplication()->getCurrentTool()->disconnect(this);
+  TTool::getApplication()->getCurrentOnionSkin()->disconnect(this);
 }
 
 //-----------------------------------------------------------------------------
@@ -2978,7 +3144,7 @@ void ShiftTraceSettingsPane::onToolSwitched() {
   if (currTool->isViewerNavigationToolSelected()) return;
 
   bool isShiftTrace = currTool->getTool() == m_tool;
-  setEnabled(isShiftTrace);
+  m_editShiftContents->setEnabled(isShiftTrace);
   if (isShiftTrace) updateStatus();
 }
 
@@ -3004,6 +3170,21 @@ void ShiftTraceSettingsPane::onSnapPresetClicked() {
   m_snapRatioProp->setValue(value);
   m_tool->onPropertyChanged(m_snapRatioProp->getName());
   updateStatus();
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::updateDisplayFields() {
+  Preferences *pref = Preferences::instance();
+  m_densityField->setValue(100 - pref->getIntValue(onionPaperThickness));
+  for (int i = 0; i < 2; i++)
+    m_colorFields[i]->setColor(pref->getColorValue(kGhostColorIds[i]));
+  int colorMode = pref->getIntValue(shiftAndTraceGhostColorMode);
+  m_inksOnlyCB->setChecked(pref->getBoolValue(onionInksOnly));
+  m_inksOnlyCB->setEnabled(colorMode !=
+                           Preferences::ShiftAndTraceGhost_OriginalColors);
+  QSignalBlocker blocker(m_colorModeCombo);
+  m_colorModeCombo->setCurrentIndex(m_colorModeCombo->findData(colorMode));
 }
 
 //=============================================================================

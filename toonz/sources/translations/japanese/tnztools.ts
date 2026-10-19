@@ -1659,6 +1659,61 @@ Do you want to proceed?</source>
     </message>
 </context>
 <context>
+    <name>ShiftTraceSettingsPane</name>
+    <message>
+        <source>Shared with the Paper Thickness of the onion skin (Paper Thickness = 100 - Density)</source>
+        <translation>オニオンスキンの紙厚と共通です（紙厚 = 100 − 濃度）</translation>
+    </message>
+    <message>
+        <source>Original Colors</source>
+        <translation>本来の色</translation>
+    </message>
+    <message>
+        <source>Onion Skin Colors</source>
+        <translation>オニオンスキンの色</translation>
+    </message>
+    <message>
+        <source>Half Color</source>
+        <translation>ハーフカラー</translation>
+    </message>
+    <message>
+        <source>Double-click to edit in the Style Editor. Shared with the onion skin colors</source>
+        <translation>ダブルクリックでスタイルエディタを開いて編集します。オニオンスキンの色と共通です</translation>
+    </message>
+    <message>
+        <source>Previous Drawing</source>
+        <translation>前のコマ</translation>
+    </message>
+    <message>
+        <source>Following Drawing</source>
+        <translation>後のコマ</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>表示</translation>
+    </message>
+    <message>
+        <source>Density:</source>
+        <translation>濃度:</translation>
+    </message>
+    <message>
+        <source>Color:</source>
+        <translation>色:</translation>
+    </message>
+    <message>
+        <source>Color Mode:</source>
+        <translation>表示方法:</translation>
+    </message>
+    <message>
+        <source>Display Lines Only</source>
+        <translation>線のみ表示</translation>
+    </message>
+    <message>
+        <source>Shared with the onion skin. Has no effect when the Color Mode is Original Colors</source>
+        <translation>オニオンスキンと共通です。表示方法が「本来の色」のときは効きません</translation>
+    </message>
+</context>
+<context>
     <name>ShiftTraceToolOptionBox</name>
     <message>
         <source>Reset Previous</source>
