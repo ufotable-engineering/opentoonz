@@ -2949,7 +2949,10 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     : QFrame(parent)
     , m_tool(static_cast<ShiftTraceTool *>(
           TTool::getTool("T_ShiftTrace", TTool::ToonzImage)))
-    , m_snapRatioProp(0) {
+    , m_snapRatioProp(0)
+    , m_snapNumeratorLabel(0)
+    , m_snapDenominatorField(0)
+    , m_snapDenominatorEdited(false) {
   QVBoxLayout *layout = new QVBoxLayout(this);
   layout->setContentsMargins(8, 8, 8, 8);
   layout->setSpacing(6);
@@ -3114,16 +3117,21 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
       ratioLayout->addWidget(btn, 0);
       m_snapPresetBtns.push_back(btn);
     }
-    ToolOptionTextField *field =
-        new ToolOptionTextField(m_tool, m_snapRatioProp, toolHandle);
-    field->setFixedWidth(60);
-    ratioLayout->addWidget(field, 0);
+    m_snapNumeratorLabel = new QLabel(this);
+    m_snapDenominatorField =
+        new DVGui::IntLineEdit(this, 1, 1, ShiftTraceTool::kMaxSnapDivision);
+    connect(m_snapDenominatorField, &QLineEdit::textEdited, this,
+            [this]() { m_snapDenominatorEdited = true; });
+    connect(m_snapDenominatorField, SIGNAL(editingFinished()), this,
+            SLOT(onSnapDenominatorEdited()));
+    ratioLayout->addSpacing(4);
+    ratioLayout->addWidget(m_snapNumeratorLabel, 0);
+    ratioLayout->addWidget(m_snapDenominatorField, 0);
     ratioLayout->addStretch(1);
     editShiftLayout->addWidget(
         new QLabel(m_snapRatioProp->getQStringName() + ":", this), 2, 0,
         Qt::AlignRight | Qt::AlignVCenter);
     editShiftLayout->addLayout(ratioLayout, 2, 1);
-    m_controls.push_back(field);
   }
 
   QHBoxLayout *optionLayout = new QHBoxLayout;
@@ -3216,6 +3224,34 @@ void ShiftTraceSettingsPane::updateStatus() {
   QString current = QString::fromStdWString(m_snapRatioProp->getValue());
   for (QPushButton *btn : m_snapPresetBtns)
     btn->setChecked(btn->text() == current);
+  // Dragging the midpoint moves the numerator, so it is shown instead of
+  // being fixed to 1
+  m_snapNumeratorLabel->setText(
+      QString("%1/").arg(std::max(m_tool->getSnapNumerator(), 1)));
+  int division = m_tool->getSnapDivision();
+  if (!m_snapDenominatorEdited)
+    m_snapDenominatorField->setText(division >= 2 ? QString::number(division)
+                                                  : QString());
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::applySnapRatio(const std::wstring &value) {
+  m_snapDenominatorEdited = false;
+  m_snapRatioProp->setValue(value);
+  m_tool->onPropertyChanged(m_snapRatioProp->getName());
+  updateStatus();
+}
+
+//-----------------------------------------------------------------------------
+// Editing also finishes on a mere focus loss, which must keep a numerator
+// moved by dragging the midpoint. A value changed by middle-dragging the
+// field is not typed, so it is caught by the comparison
+
+void ShiftTraceSettingsPane::onSnapDenominatorEdited() {
+  int den = m_snapDenominatorField->getValue();
+  if (!m_snapDenominatorEdited && den == m_tool->getSnapDivision()) return;
+  applySnapRatio(QString("1/%1").arg(den).toStdWString());
 }
 
 //-----------------------------------------------------------------------------
@@ -3227,9 +3263,7 @@ void ShiftTraceSettingsPane::onSnapPresetClicked() {
   if (!btn) return;
   std::wstring value = btn->text().toStdWString();
   if (m_snapRatioProp->getValue() == value) value = L"";
-  m_snapRatioProp->setValue(value);
-  m_tool->onPropertyChanged(m_snapRatioProp->getName());
-  updateStatus();
+  applySnapRatio(value);
 }
 
 //-----------------------------------------------------------------------------

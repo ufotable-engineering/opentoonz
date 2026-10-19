@@ -35,14 +35,6 @@ TEnv::IntVar ShiftTraceStraightTrajectory("ShiftTraceToolStraightTrajectory",
                                           0);
 TEnv::IntVar ShiftTraceRotateAlongArc("ShiftTraceToolRotateAlongArc", 1);
 
-namespace {
-
-// Every division draws a dot on the trajectory each frame, so an unbounded
-// denominator would stall the viewer
-const int kMaxSnapDivision = 64;
-
-}  // namespace
-
 //=============================================================================
 
 static bool circumCenter(TPointD &out, const TPointD &a, const TPointD &b,
@@ -275,20 +267,17 @@ double ShiftTraceTool::snapOrJump(double ratio) const {
                              : snapRatio(ratio);
 }
 
-// Accepts "a/b" (jump to a/b and snap to b-ths) or "b" (snap only)
+// Accepts "a/b": jumps to a/b and snaps to b-ths
 void ShiftTraceTool::parseSnapRatio() {
   QString text      = QString::fromStdWString(m_snapRatio.getValue()).trimmed();
   QStringList parts = text.split(QChar('/'));
   bool okNum = false, okDen = false;
   int num = 0, den = 0;
-  if (parts.size() == 1) {
-    den   = parts[0].trimmed().toInt(&okDen);
-    okNum = true;
-  } else if (parts.size() == 2) {
+  if (parts.size() == 2) {
     num = parts[0].trimmed().toInt(&okNum);
     den = parts[1].trimmed().toInt(&okDen);
   }
-  if (!okNum || !okDen || den < 2 || den > kMaxSnapDivision || num < 0 ||
+  if (!okNum || !okDen || den < 2 || den > kMaxSnapDivision || num < 1 ||
       num >= den)
     den = num = 0;
   m_snapDivision  = den;
@@ -299,9 +288,7 @@ void ShiftTraceTool::parseSnapRatio() {
 void ShiftTraceTool::updateSnapRatioText() {
   QString text;
   if (m_snapDivision >= 2)
-    text = m_snapNumerator > 0
-               ? QString("%1/%2").arg(m_snapNumerator).arg(m_snapDivision)
-               : QString::number(m_snapDivision);
+    text = QString("%1/%2").arg(m_snapNumerator).arg(m_snapDivision);
   m_snapRatio.setValue(text.toStdWString());
 }
 
@@ -804,8 +791,7 @@ bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
   if (ratioEntered) {
     int oldDivision = m_snapDivision, oldNumerator = m_snapNumerator;
     parseSnapRatio();
-    // The text field also reports a mere focus loss, which must not reset
-    // ghosts adjusted by hand
+    // Entering the current ratio again must not reset ghosts adjusted by hand
     if (m_snapDivision == oldDivision && m_snapNumerator == oldNumerator)
       return true;
   }

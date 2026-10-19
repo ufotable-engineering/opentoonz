@@ -79,6 +79,7 @@ class ShiftTraceTool;
 
 namespace DVGui {
 class IntField;
+class IntLineEdit;
 class ColorField;
 }  // namespace DVGui
 
@@ -784,6 +785,9 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   ShiftTraceTool *m_tool;
   TStringProperty *m_snapRatioProp;
   QList<QPushButton *> m_snapPresetBtns;
+  QLabel *m_snapNumeratorLabel;
+  DVGui::IntLineEdit *m_snapDenominatorField;
+  bool m_snapDenominatorEdited;
   QList<ToolOptionControl *> m_controls;
   QWidget *m_editShiftContents;
   QPushButton *m_ghostBtns[2];
@@ -793,6 +797,8 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   DVGui::ColorField *m_colorFields[2];
   QComboBox *m_colorModeCombo;
   DVGui::CheckBox *m_inksOnlyCB;
+
+  void applySnapRatio(const std::wstring &value);
 
 public:
   ShiftTraceSettingsPane(QWidget *parent = 0);
@@ -806,6 +812,7 @@ protected slots:
   void updateStatus();
   void onToolSwitched();
   void onSnapPresetClicked();
+  void onSnapDenominatorEdited();
   void updateDisplayFields();
 };
 

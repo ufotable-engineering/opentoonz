@@ -5,6 +5,10 @@
 
 class ShiftTraceTool final : public TTool {
 public:
+  // Every division draws a dot on the trajectory each frame, so an unbounded
+  // denominator would stall the viewer
+  static constexpr int kMaxSnapDivision = 64;
+
   enum CurveStatus {
     NoCurve,
     TwoPointsCurve,  // just during the first click&drag
@@ -114,5 +118,7 @@ public:
   void updateTranslation() override;
 
   int getCurrentGhostIndex() { return m_ghostIndex; }
+  int getSnapNumerator() const { return m_snapNumerator; }
+  int getSnapDivision() const { return m_snapDivision; }
   void setCurrentGhostIndex(int index);
 };
