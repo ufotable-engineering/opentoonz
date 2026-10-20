@@ -1469,7 +1469,6 @@ bool SceneViewer::event(QEvent *e) {
       return true;
     }
   }
-  // The key release goes to another widget once the viewer loses focus.
   if (e->type() == QEvent::FocusOut && m_keyAction) releaseKeyAction();
 
   // discard too frequent move events
