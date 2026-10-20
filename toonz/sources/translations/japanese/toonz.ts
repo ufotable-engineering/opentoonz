@@ -8071,6 +8071,10 @@ or you may delete necessary files for it.</source>
         <translation>スクラブ再生</translation>
     </message>
     <message>
+        <source>Viewer Pan</source>
+        <translation>ツールを切り替えずにパン</translation>
+    </message>
+    <message>
         <source> [WIP]</source>
         <translation> (開発中)</translation>
     </message>
