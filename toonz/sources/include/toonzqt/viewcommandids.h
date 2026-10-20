@@ -18,6 +18,7 @@
 #define V_PositionReset "T_PositionReset"
 
 #define V_Scrub "T_Scrub"
+#define V_Pan "V_Pan"
 
 // following command ids are for command bar
 #define VB_ViewReset "VB_ViewReset"

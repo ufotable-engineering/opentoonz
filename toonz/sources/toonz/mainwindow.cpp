@@ -3655,6 +3655,7 @@ void MainWindow::defineActions() {
 
   // Special Modifier Keys
   createSpecialModifierAction(V_Scrub, QT_TR_NOOP("Viewer Scrub"), "#");
+  createSpecialModifierAction(V_Pan, QT_TR_NOOP("Viewer Pan"), "");
 
   // create cell mark actions
   for (int markId = 0; markId < 12; markId++) {

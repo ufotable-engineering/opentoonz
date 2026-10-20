@@ -97,8 +97,10 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
 
   TPointD m_oldPos;
   bool m_dragging;
-  int m_mouseScrubbing = 0;
-  QAction *m_keyAction = nullptr;
+  int m_mouseScrubbing  = 0;
+  bool m_panKeyPressed  = false;
+  bool m_keyPanDragging = false;
+  QAction *m_keyAction  = nullptr;
 
   QPointF m_firstPanPoint;
   QPointF m_undoPoint;
@@ -398,6 +400,7 @@ protected:
   void zoomQt(const QPoint &center, double scaleFactor);
 
   void mouseScrub(const TMouseEvent &e);
+  void releaseKeyAction();
 
   // overridden from TToolViewer
   void pan(const TPointD &delta) override { panQt(QPointF(delta.x, delta.y)); }

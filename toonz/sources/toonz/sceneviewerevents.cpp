@@ -619,6 +619,18 @@ void SceneViewer::onMove(const TMouseEvent &event) {
     return;
   }
 
+  if (m_keyPanDragging) {
+    panQt(curPos - m_pos);
+    m_pos = curPos;
+    setToolCursor(this, ToolCursor::PanCursor);
+    return;
+  }
+
+  if (m_panKeyPressed && m_mouseButton == Qt::NoButton) {
+    setToolCursor(this, ToolCursor::PanCursor);
+    return;
+  }
+
   if (m_editPreviewSubCamera) {
     if (!PreviewSubCameraManager::instance()->mouseMoveEvent(this, event)) {
       if (m_tabletEvent && m_tabletState == StartStroke && m_tabletMove) {
@@ -830,6 +842,17 @@ void SceneViewer::onPress(const TMouseEvent &event) {
     }
     return;
   }
+  if (m_panKeyPressed && event.button() == Qt::LeftButton) {
+    m_pos            = event.mousePos() * getDevPixRatio();
+    m_mouseButton    = Qt::LeftButton;
+    m_buttonClicked  = true;
+    m_keyPanDragging = true;
+    if (m_tabletEvent && m_tabletState == Touched)
+      m_tabletState = StartStroke;
+    else
+      m_mouseState = StartStroke;
+    return;
+  }
   if (m_mouseButton != Qt::NoButton) {
     if (event.m_isTablet && m_mouseState != None) {
       //      qDebug() << "[onPress] Switched from MousePress to TabletPress";
@@ -985,6 +1008,12 @@ void SceneViewer::onRelease(const TMouseEvent &event) {
   m_dragging  = false;
 
   TTool *tool = TApp::instance()->getCurrentTool()->getTool();
+  if (m_keyPanDragging) {
+    m_keyPanDragging = false;
+    if (TApp::instance()->getCurrentTool()->isToolBusy())
+      TApp::instance()->getCurrentTool()->setToolBusy(false);
+    goto quit;
+  }
   if (!tool || !tool->isEnabled()) {
     if (!m_toolDisableReason.isEmpty() && m_mouseButton == Qt::LeftButton &&
         !m_editPreviewSubCamera)
@@ -1389,6 +1418,19 @@ bool SceneViewer::event(QEvent *e) {
       e->accept();
       return true;
     }
+
+    TTool *tool   = TApp::instance()->getCurrentTool()->getTool();
+    bool isTyping = tool && tool->getName() == T_Type && tool->isActive();
+    if (actionId == V_Pan && !isTyping) {
+      if (!m_keyAction) {
+        m_panKeyPressed = true;
+        m_keyAction     = action;
+        m_keyAction->setEnabled(false);
+        setToolCursor(this, ToolCursor::PanCursor);
+      }
+      e->accept();
+      return true;
+    }
   }
   if (e->type() == QEvent::ShortcutOverride) {
     TTool *tool = TApp::instance()->getCurrentTool()->getTool();
@@ -1429,19 +1471,13 @@ bool SceneViewer::event(QEvent *e) {
     }
 
     if (m_keyAction) {
-      if (keyEvent->isAutoRepeat()) {
-        e->accept();
-        return true;
-      } else {
-        m_mouseScrubbing = 0;
-        m_keyAction->setEnabled(true);
-        m_keyAction = nullptr;
-        invalidateToolStatus();
-        e->accept();
-        return true;
-      }
+      if (!keyEvent->isAutoRepeat()) releaseKeyAction();
+      e->accept();
+      return true;
     }
   }
+  // The key release goes to another widget once the viewer loses focus.
+  if (e->type() == QEvent::FocusOut && m_keyAction) releaseKeyAction();
 
   // discard too frequent move events
   static QElapsedTimer clock;
@@ -1800,6 +1836,11 @@ void SceneViewer::mouseDoubleClickEvent(QMouseEvent *event) {
     m_gestureActive = false;
     return;
   }
+  // Qt sends the second press of a double click only to this handler.
+  if (m_panKeyPressed) {
+    mousePressEvent(event);
+    return;
+  }
   if (m_freezedStatus != NO_FREEZED) return;
 
   int frame = TApp::instance()->getCurrentFrame()->getFrame();
@@ -1971,4 +2012,14 @@ void SceneViewer::mouseScrub(const TMouseEvent &e) {
     CommandManager::instance()->execute(MI_NextFrame);
 
   m_oldPos = e.m_pos;
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneViewer::releaseKeyAction() {
+  m_mouseScrubbing = 0;
+  m_panKeyPressed  = false;
+  m_keyAction->setEnabled(true);
+  m_keyAction = nullptr;
+  invalidateToolStatus();
 }
