@@ -831,26 +831,17 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
 
 void SceneViewer::onPress(const TMouseEvent &event) {
   m_dragging = true;
-  if (m_mouseScrubbing > 0) {
-    m_pos           = event.mousePos() * getDevPixRatio();
-    m_mouseButton   = event.button();
-    m_buttonClicked = true;
+  if (m_mouseScrubbing > 0 ||
+      (m_panKeyPressed && event.button() == Qt::LeftButton)) {
+    m_keyPanDragging = m_mouseScrubbing == 0;
+    m_pos            = event.mousePos() * getDevPixRatio();
+    m_mouseButton    = event.button();
+    m_buttonClicked  = true;
     if (m_tabletEvent && m_tabletState == Touched) {
       m_tabletState = StartStroke;
     } else if (m_mouseButton == Qt::LeftButton) {
       m_mouseState = StartStroke;
     }
-    return;
-  }
-  if (m_panKeyPressed && event.button() == Qt::LeftButton) {
-    m_pos            = event.mousePos() * getDevPixRatio();
-    m_mouseButton    = Qt::LeftButton;
-    m_buttonClicked  = true;
-    m_keyPanDragging = true;
-    if (m_tabletEvent && m_tabletState == Touched)
-      m_tabletState = StartStroke;
-    else
-      m_mouseState = StartStroke;
     return;
   }
   if (m_mouseButton != Qt::NoButton) {
@@ -1094,12 +1085,13 @@ void SceneViewer::resetTabletStatus() {
   // Qt picks its own mapping or the cursor again on the next proximity enter.
   resetTabletOffset();
   if (!m_buttonClicked) return;
-  m_mouseButton   = Qt::NoButton;
-  m_tabletEvent   = false;
-  m_tabletState   = None;
-  m_tabletMove    = false;
-  m_pressure      = 0;
-  m_buttonClicked = false;
+  m_mouseButton    = Qt::NoButton;
+  m_tabletEvent    = false;
+  m_tabletState    = None;
+  m_tabletMove     = false;
+  m_pressure       = 0;
+  m_buttonClicked  = false;
+  m_keyPanDragging = false;
   if (TApp::instance()->getCurrentTool()->isToolBusy())
     TApp::instance()->getCurrentTool()->setToolBusy(false);
 }
@@ -1409,7 +1401,7 @@ bool SceneViewer::event(QEvent *e) {
     std::string actionId = CommandManager::instance()->getIdFromAction(action);
 
     if (actionId == V_Scrub) {
-      if (m_mouseScrubbing == 0) {
+      if (!m_keyAction) {
         m_mouseScrubbing = 1;
         m_keyAction      = action;
         m_keyAction->setEnabled(false);
@@ -1419,17 +1411,18 @@ bool SceneViewer::event(QEvent *e) {
       return true;
     }
 
-    TTool *tool   = TApp::instance()->getCurrentTool()->getTool();
-    bool isTyping = tool && tool->getName() == T_Type && tool->isActive();
-    if (actionId == V_Pan && !isTyping) {
-      if (!m_keyAction) {
-        m_panKeyPressed = true;
-        m_keyAction     = action;
-        m_keyAction->setEnabled(false);
-        setToolCursor(this, ToolCursor::PanCursor);
+    if (actionId == V_Pan) {
+      TTool *tool = TApp::instance()->getCurrentTool()->getTool();
+      if (!tool || tool->getName() != T_Type || !tool->isActive()) {
+        if (!m_keyAction) {
+          m_panKeyPressed = true;
+          m_keyAction     = action;
+          m_keyAction->setEnabled(false);
+          setToolCursor(this, ToolCursor::PanCursor);
+        }
+        e->accept();
+        return true;
       }
-      e->accept();
-      return true;
     }
   }
   if (e->type() == QEvent::ShortcutOverride) {
@@ -1837,7 +1830,7 @@ void SceneViewer::mouseDoubleClickEvent(QMouseEvent *event) {
     return;
   }
   // Qt sends the second press of a double click only to this handler.
-  if (m_panKeyPressed) {
+  if (m_panKeyPressed && event->button() == Qt::LeftButton) {
     mousePressEvent(event);
     return;
   }
