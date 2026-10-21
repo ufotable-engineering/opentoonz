@@ -375,6 +375,9 @@ public:
   int getTempToolSwitchTimer() const {
     return getIntValue(tempToolSwitchTimer);
   }
+  bool isKeepToolOnViewNavigationEnabled() const {
+    return getBoolValue(keepToolOnViewNavigation);
+  }
   double getAnimateToolHandleSize() const {
     return getDoubleValue(animateToolHandleSize);
   }

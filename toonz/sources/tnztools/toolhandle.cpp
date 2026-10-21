@@ -13,6 +13,10 @@
 #include <QMap>
 #include <QDebug>
 
+static bool isViewerNavigationTool(const QString &name) {
+  return name == T_RotateView || name == T_ZoomView || name == T_HandView;
+}
+
 //=============================================================================
 // ToolHandle
 //-----------------------------------------------------------------------------
@@ -22,6 +26,7 @@ ToolHandle::ToolHandle()
     , m_toolName("")
     , m_toolTargetType(TTool::NoTarget)
     , m_storedToolName("")
+    , m_suspendedTool(0)
     , m_toolIsBusy(false) {}
 
 //-----------------------------------------------------------------------------
@@ -35,13 +40,26 @@ TTool *ToolHandle::getTool() const { return m_tool; }
 //-----------------------------------------------------------------------------
 
 void ToolHandle::setTool(QString name) {
-  m_oldToolName = m_toolName = name;
+  TTool *tool       = TTool::getTool(name.toStdString(),
+                                     (TTool::ToolTargetType)m_toolTargetType);
+  bool toNavigation = isViewerNavigationTool(name);
 
-  TTool *tool = TTool::getTool(m_toolName.toStdString(),
-                               (TTool::ToolTargetType)m_toolTargetType);
+  // navigation tools are temporary, so keep the current tool's editing state
+  if (toNavigation && !isViewerNavigationToolSelected() &&
+      Preferences::instance()->isKeepToolOnViewNavigationEnabled())
+    m_suspendedTool = m_tool;
+  bool resumed = m_suspendedTool && tool == m_suspendedTool;
+
+  // unsetPseudoTool() must still return to the tool used before the pseudo tool
+  if (!m_suspendedTool || (!toNavigation && !resumed)) m_oldToolName = name;
+  m_toolName = name;
   if (tool == m_tool) return;
 
-  if (m_tool) m_tool->onDeactivate();
+  if (m_tool && m_tool != m_suspendedTool) m_tool->onDeactivate();
+  if (m_suspendedTool && !toNavigation) {
+    if (!resumed) m_suspendedTool->onDeactivate();
+    m_suspendedTool = 0;
+  }
 
   // Camera test uses the automatically activated CameraTestTool
   if (name != "T_CameraTest" && CameraTestCheck::instance()->isEnabled())
@@ -57,7 +75,7 @@ void ToolHandle::setTool(QString name) {
 
   if (m_tool)  // Should always enter
   {
-    m_tool->onActivate();
+    if (!resumed) m_tool->onActivate();
     emit toolSwitched();
   }
 }
@@ -89,8 +107,7 @@ void ToolHandle::restoreTool() {
 //-----------------------------------------------------------------------------
 
 bool ToolHandle::isViewerNavigationToolSelected() {
-  return m_toolName == T_RotateView || m_toolName == T_ZoomView ||
-         m_toolName == T_HandView;
+  return isViewerNavigationTool(m_toolName);
 }
 
 //-----------------------------------------------------------------------------
@@ -163,6 +180,7 @@ void ToolHandle::onImageChanged(TImage::Type imageType) {
     m_tool->updateMatrix();
     m_tool->onImageChanged();
   }
+  if (m_suspendedTool) m_suspendedTool->onImageChanged();
 }
 
 //-----------------------------------------------------------------------------
