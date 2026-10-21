@@ -10674,6 +10674,10 @@ in non alpha-enabled image format.</source>
         <translation>ツールの一時切り替えに必要なショートカットキーの押下時間（ms）:</translation>
     </message>
     <message>
+        <source>Keep Tool Editing State during Pan, Zoom and Rotate View</source>
+        <translation>手のひら・ズーム・回転（押下時）の間もツールの編集状態を保持する</translation>
+    </message>
+    <message>
         <source>[Experimental Feature] </source>
         <translation>[試験的な新機能] </translation>
     </message>
