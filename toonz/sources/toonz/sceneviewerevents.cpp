@@ -1366,6 +1366,10 @@ bool SceneViewer::event(QEvent *e) {
     m_gestureActive = true;
     return true;
   }
+  // Keys pressed while another widget had the focus were not stored, so
+  // releasing them here must not switch back to a tool stored long before
+  if (e->type() == QEvent::FocusIn)
+    TApp::instance()->getCurrentTool()->storeTool();
   if (e->type() == QEvent::ShortcutOverride || e->type() == QEvent::KeyPress) {
     QKeyEvent *keyEvent = static_cast<QKeyEvent *>(e);
     
