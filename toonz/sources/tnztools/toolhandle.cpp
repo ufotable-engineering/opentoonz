@@ -180,7 +180,10 @@ void ToolHandle::onImageChanged(TImage::Type imageType) {
     m_tool->updateMatrix();
     m_tool->onImageChanged();
   }
-  if (m_suspendedTool) m_suspendedTool->onImageChanged();
+  if (m_suspendedTool) {
+    m_suspendedTool->updateMatrix();
+    m_suspendedTool->onImageChanged();
+  }
 }
 
 //-----------------------------------------------------------------------------

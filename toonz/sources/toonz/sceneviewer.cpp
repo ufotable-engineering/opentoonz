@@ -1875,6 +1875,23 @@ void SceneViewer::drawOverlay() {
     assert(glGetError() == GL_NO_ERROR);
   }
 
+  TTool *suspendedTool = app->getCurrentTool()->getSuspendedTool();
+  if (suspendedTool && suspendedTool->isEnabled()) {
+    if (!m_isLocator) suspendedTool->setViewer(this);
+    glPushMatrix();
+    if (m_draw3DMode) {
+      mult3DMatrix();
+      tglMultMatrix(suspendedTool->getMatrix());
+    } else
+      tglMultMatrix(getViewMatrix() * suspendedTool->getMatrix());
+    if (suspendedTool->getToolType() & TTool::LevelTool &&
+        !app->getCurrentObject()->isSpline())
+      glScaled(m_dpiScale.x, m_dpiScale.y, 1);
+    m_pixelSize = sqrt(tglGetPixelSize2()) * getDevPixRatio();
+    suspendedTool->draw();
+    glPopMatrix();
+  }
+
   // draw tool gadgets
   TTool *tool         = app->getCurrentTool()->getTool();
   TXshSimpleLevel *sl = app->getCurrentLevel()->getSimpleLevel();

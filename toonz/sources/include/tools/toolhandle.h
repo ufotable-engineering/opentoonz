@@ -46,6 +46,7 @@ public:
   ~ToolHandle();
 
   TTool *getTool() const;
+  TTool *getSuspendedTool() const { return m_suspendedTool; }
   void setTool(QString name);
   void setTargetType(int targetType);  // TODO: unused, remove?
 
