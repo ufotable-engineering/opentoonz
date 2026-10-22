@@ -11,6 +11,7 @@
 #include "toonz/txsheet.h"
 #include "toonz/preferences.h"
 #include "tools/toolhandle.h"
+#include "tools/tool.h"
 
 #include "toonz/onionskinmask.h"
 
@@ -265,11 +266,15 @@ void OnioniSkinMaskGUI::updateShiftTraceFrame() {
     return;
   }
   enteredShiftTraceAlignment = it->second;
-  OnionSkinMask osm          = osmh->getOnionSkinMask();
+  if (it->second == alignment) return;
+  OnionSkinMask osm = osmh->getOnionSkinMask();
   osm.setShiftTraceAlignment(it->second);
   osmh->setOnionSkinMask(osm);
-  // Refreshes the reset buttons
-  app->getCurrentTool()->notifyToolChanged();
+  // Refreshes the reset buttons, which are also refreshed when switching to
+  // the Shift & Trace tool
+  TTool *tool = app->getCurrentTool()->getTool();
+  if (tool && tool->getName() == "T_ShiftTrace")
+    app->getCurrentTool()->notifyToolChanged();
 }
 
 //------------------------------------------------------------------------------
