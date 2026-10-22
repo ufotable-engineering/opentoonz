@@ -2778,6 +2778,8 @@ void resetShiftTraceGhost(int index) {
   app->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
   TTool *tool = app->getCurrentTool()->getTool();
   if (tool) tool->reset();
+  tool = app->getCurrentTool()->getSuspendedTool();
+  if (tool) tool->reset();
 }
 
 }  // namespace

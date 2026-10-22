@@ -512,6 +512,8 @@ public:
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     TTool *tool = TApp::instance()->getCurrentTool()->getTool();
     if (tool) tool->reset();
+    tool = TApp::instance()->getCurrentTool()->getSuspendedTool();
+    if (tool) tool->reset();
   }
 } resetShiftTraceCommand;
 
