@@ -636,7 +636,10 @@ void ShiftTraceTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 }
 
 void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
-  if (followMask()) m_highlightedGadget = getGadget(pos);
+  if (followMask()) {
+    updateData();
+    m_highlightedGadget = getGadget(pos);
+  }
   m_gadget = m_highlightedGadget;
   m_oldPos = m_startPos = pos;
 
@@ -839,6 +842,9 @@ bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
   // The settings panel stays enabled under the navigation tools. The curve
   // is discarded on the next activation, so only the settings are kept
   if (TTool::getApplication()->getCurrentTool()->getTool() != this) return true;
+  // Without a redraw since switching the frame, the previous frame's alignment
+  // would be written back
+  if (followMask()) updateData();
 
   // Ghosts moved by hand without a trajectory must survive a mode switch
   if (m_curveStatus == ThreePointsCurve) {
