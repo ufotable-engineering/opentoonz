@@ -1421,6 +1421,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Geometric Tool: Click Twice to Create Arcs")},
       {tempToolSwitchTimer,
        tr("Switch Tool Temporarily Keypress Length (ms):")},
+      {keepToolOnViewNavigation,
+       tr("Keep Tool Editing State during Pan, Zoom and Rotate View")},
       {animateToolHandleSize, tr("Handle Size (%):")},
       {animateToolColor, tr("Handle Color:")},
       {defaultStartupTool, tr("Default Startup and New Scene Tool:")},
@@ -2272,6 +2274,7 @@ QWidget* PreferencesPopup::createToolsPage() {
   insertUI(useCtrlAltToResizeBrush, lay);
   insertUI(clickTwiceToCreateArcs, lay);
   insertUI(tempToolSwitchTimer, lay);
+  insertUI(keepToolOnViewNavigation, lay);
 
   QGridLayout* animateToolLay = insertGroupBox(tr("Animate Tool"), lay);
   {

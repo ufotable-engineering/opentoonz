@@ -128,6 +128,7 @@ enum PreferencesItemId {
   useStrokeEndCursor,
   clickTwiceToCreateArcs,
   tempToolSwitchTimer,
+  keepToolOnViewNavigation,
   animateToolHandleSize,
   animateToolColor,
   defaultStartupTool,

@@ -38,6 +38,7 @@ class DVAPI ToolHandle final : public QObject {
   QString m_storedToolName;
   QElapsedTimer m_storedToolTime;
   QString m_oldToolName;
+  TTool *m_suspendedTool;
   bool m_toolIsBusy;
 
 public:
@@ -45,6 +46,7 @@ public:
   ~ToolHandle();
 
   TTool *getTool() const;
+  TTool *getSuspendedTool() const { return m_suspendedTool; }
   void setTool(QString name);
   void setTargetType(int targetType);  // TODO: unused, remove?
 
