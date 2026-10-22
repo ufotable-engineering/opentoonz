@@ -816,7 +816,7 @@ void PreferencesPopup::onOnionColorChanged() {
 
 //-----------------------------------------------------------------------------
 
-void PreferencesPopup::onShiftAndTraceGhostColorModeChanged() {
+void PreferencesPopup::onShiftAndTraceSettingChanged() {
   TApp::instance()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
 }
 
@@ -2499,12 +2499,10 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(onionInksOnly,
                            &PreferencesPopup::onOnionColorChanged);
-  m_onEditedFuncMap.insert(
-      shiftAndTraceGhostColorMode,
-      &PreferencesPopup::onShiftAndTraceGhostColorModeChanged);
-  m_onEditedFuncMap.insert(
-      shiftAndTraceAlignmentPerFrame,
-      &PreferencesPopup::onShiftAndTraceGhostColorModeChanged);
+  m_onEditedFuncMap.insert(shiftAndTraceGhostColorMode,
+                           &PreferencesPopup::onShiftAndTraceSettingChanged);
+  m_onEditedFuncMap.insert(shiftAndTraceAlignmentPerFrame,
+                           &PreferencesPopup::onShiftAndTraceSettingChanged);
 
   connect(TApp::instance()->getCurrentOnionSkin(),
           &TOnionSkinMaskHandle::onionSkinMaskChanged, this,
