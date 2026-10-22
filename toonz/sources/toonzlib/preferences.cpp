@@ -672,6 +672,8 @@ void Preferences::definePreferenceItems() {
          false);
   define(shiftAndTraceGhostColorMode, "shiftAndTraceGhostColorMode",
          QMetaType::Int, static_cast<int>(ShiftAndTraceGhost_OnionSkinColors));
+  define(shiftAndTraceAlignmentPerFrame, "shiftAndTraceAlignmentPerFrame",
+         QMetaType::Bool, false);
   define(animatedGuidedDrawing, "animatedGuidedDrawing", QMetaType::Int,
          0);  // Arrow Markers
 

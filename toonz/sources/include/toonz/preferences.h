@@ -520,6 +520,9 @@ public:
     return ShiftAndTraceGhostColorMode(
         getIntValue(shiftAndTraceGhostColorMode));
   }
+  bool isShiftAndTraceAlignmentPerFrameEnabled() const {
+    return getBoolValue(shiftAndTraceAlignmentPerFrame);
+  }
   bool getAnimatedGuidedDrawing() const {
     return getIntValue(animatedGuidedDrawing) == 1;
   }

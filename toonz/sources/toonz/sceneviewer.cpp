@@ -504,10 +504,8 @@ public:
   void execute() override {
     OnionSkinMask osm =
         TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-    osm.setShiftTraceGhostCenter(0, TPointD());
-    osm.setShiftTraceGhostCenter(1, TPointD());
-    osm.setShiftTraceGhostAff(0, TAffine());
-    osm.setShiftTraceGhostAff(1, TAffine());
+    osm.resetShiftTraceGhost(0);
+    osm.resetShiftTraceGhost(1);
     TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osm);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     TTool *tool = TApp::instance()->getCurrentTool()->getTool();

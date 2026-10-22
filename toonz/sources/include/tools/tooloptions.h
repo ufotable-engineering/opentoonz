@@ -792,6 +792,7 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   QWidget *m_editShiftContents;
   QPushButton *m_ghostBtns[2];
   QPushButton *m_resetSelectedBtn, *m_resetBothBtn;
+  DVGui::CheckBox *m_alignmentPerFrameCB;
 
   DVGui::IntField *m_densityField;
   DVGui::ColorField *m_colorFields[2];

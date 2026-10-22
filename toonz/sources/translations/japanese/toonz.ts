@@ -10528,6 +10528,10 @@ Also the initial output destination for new scenes will be set to $scenefolder a
         <translation>ライトテーブルの前後フレームの表示方法：</translation>
     </message>
     <message>
+        <source>Keep Shift and Trace Alignment for Each Frame</source>
+        <translation>ライトテーブルの位置合わせをフレームごとに保持</translation>
+    </message>
+    <message>
         <source>Original Colors</source>
         <translation>本来の色</translation>
     </message>

@@ -54,6 +54,7 @@
 #include "tunit.h"
 #include "tsystem.h"
 #include "sceneviewer.h"
+#include "onionskinmaskgui.h"
 
 // Qt includes
 #include <QTimer>
@@ -162,6 +163,15 @@ TApp::TApp()
   connect(m_paletteController->getCurrentCleanupPalette(),
           &TPaletteHandle::paletteChanged, m_currentScene,
           &TSceneHandle::sceneChanged);
+
+  connect(m_currentXsheet, &TXsheetHandle::xsheetSwitched, this,
+          &OnioniSkinMaskGUI::updateShiftTraceFrame);
+  connect(m_currentFrame, &TFrameHandle::frameSwitched, this,
+          &OnioniSkinMaskGUI::updateShiftTraceFrame);
+  connect(m_currentColumn, &TColumnHandle::columnIndexSwitched, this,
+          &OnioniSkinMaskGUI::updateShiftTraceFrame);
+  connect(m_currentLevel, &TXshLevelHandle::xshLevelSwitched, this,
+          &OnioniSkinMaskGUI::updateShiftTraceFrame);
 
   TMeasureManager::instance()->addCameraMeasures(getCurrentCameraSize);
 
@@ -412,6 +422,7 @@ void TApp::onSceneSwitched() {
 
   // clear current onionSkinMask
   m_currentOnionSkinMask->clear();
+  OnioniSkinMaskGUI::clearShiftTraceFrames();
 
   // update currentFrames
   updateCurrentFrame();

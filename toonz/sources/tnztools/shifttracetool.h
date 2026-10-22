@@ -2,6 +2,7 @@
 
 #include "tools/tool.h"
 #include "tproperty.h"
+#include "toonz/onionskinmask.h"
 
 class ShiftTraceTool final : public TTool {
 public:
@@ -54,6 +55,8 @@ private:
   TPointD m_center[2];
 
   TAffine m_oldAff;
+  // The mask's alignment when the ghosts above were last read or written
+  OnionSkinMask::ShiftTraceAlignment m_maskAlignment;
 
   TPropertyGroup m_prop;
   TBoolProperty m_straightTrajectory;
@@ -88,6 +91,8 @@ public:
   void updateCurveAffs();
   void updateCurveCenters();
   void updateGhost();
+  void loadGhosts();
+  bool followMask();
 
   void reset() override;
 
