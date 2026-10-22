@@ -20,7 +20,9 @@
 
 namespace {
 
-typedef std::pair<const void *, int> ShiftTraceFrame;
+// Holding the column or level keeps a new one from getting its address while
+// the alignment is kept
+typedef std::pair<TSmartObjectP, int> ShiftTraceFrame;
 
 // The ghosts are aligned to the drawings around the current frame, so each
 // frame keeps the alignment edited on it. A frame never edited takes over the
