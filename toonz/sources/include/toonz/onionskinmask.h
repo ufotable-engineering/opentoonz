@@ -166,9 +166,6 @@ since underlying onion-skinned drawings must be visible.
     m_shiftTrace.m_ghostFrame[index] = offset;
   }
 
-  const ShiftTraceTrajectory &getShiftTraceTrajectory() const {
-    return m_shiftTrace.m_trajectory;
-  }
   void setShiftTraceTrajectory(const ShiftTraceTrajectory &trajectory) {
     m_shiftTrace.m_trajectory = trajectory;
   }
