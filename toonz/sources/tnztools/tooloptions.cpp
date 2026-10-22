@@ -2772,8 +2772,7 @@ bool isGhostMoved(const OnionSkinMask &osm, int index) {
 void resetShiftTraceGhost(int index) {
   TTool::Application *app = TTool::getApplication();
   OnionSkinMask osm       = app->getCurrentOnionSkin()->getOnionSkinMask();
-  osm.setShiftTraceGhostCenter(index, TPointD());
-  osm.setShiftTraceGhostAff(index, TAffine());
+  osm.resetShiftTraceGhost(index);
   app->getCurrentOnionSkin()->setOnionSkinMask(osm);
   app->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
   TTool *tool = app->getCurrentTool()->getTool();
@@ -3144,6 +3143,17 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     optionLayout->addWidget(cb, 0);
     m_controls.push_back(cb);
   }
+  m_alignmentPerFrameCB =
+      new DVGui::CheckBox(tr("Keep Alignment for Each Frame"), this);
+  m_alignmentPerFrameCB->setFocusPolicy(Qt::NoFocus);
+  m_alignmentPerFrameCB->setToolTip(
+      tr("Each frame keeps the positions of the drawings and the trajectory, "
+         "which come back when returning to the frame or turning Edit Shift "
+         "on again"));
+  connect(m_alignmentPerFrameCB, &QCheckBox::clicked, this, [](bool checked) {
+    setOnionSkinPreference(shiftAndTraceAlignmentPerFrame, checked);
+  });
+  optionLayout->addWidget(m_alignmentPerFrameCB, 0);
   optionLayout->addStretch(1);
   editShiftLayout->addLayout(optionLayout, 3, 0, 1, 2);
 
@@ -3281,6 +3291,8 @@ void ShiftTraceSettingsPane::updateDisplayFields() {
                            Preferences::ShiftAndTraceGhost_OriginalColors);
   QSignalBlocker blocker(m_colorModeCombo);
   m_colorModeCombo->setCurrentIndex(m_colorModeCombo->findData(colorMode));
+  m_alignmentPerFrameCB->setChecked(
+      pref->getBoolValue(shiftAndTraceAlignmentPerFrame));
 }
 
 //=============================================================================

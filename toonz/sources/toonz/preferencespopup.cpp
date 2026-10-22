@@ -878,6 +878,9 @@ void PreferencesPopup::onOnionSkinExternallyChanged() {
   QSignalBlocker blocker(combo);
   combo->setCurrentIndex(
       combo->findData(m_pref->getIntValue(shiftAndTraceGhostColorMode)));
+  CheckBox* alignmentCB = getUI<CheckBox*>(shiftAndTraceAlignmentPerFrame);
+  QSignalBlocker alignmentBlocker(alignmentCB);
+  alignmentCB->setChecked(m_pref->getBoolValue(shiftAndTraceAlignmentPerFrame));
 }
 
 //-----------------------------------------------------------------------------
@@ -1493,6 +1496,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {onionSkinDuringPlayback, tr("Show Onion Skin During Playback")},
       {shiftAndTraceGhostColorMode,
        tr("Color Mode for Reference Drawings of Shift and Trace:")},
+      {shiftAndTraceAlignmentPerFrame,
+       tr("Keep Shift and Trace Alignment for Each Frame")},
       {animatedGuidedDrawing, tr("Vector Guided Style:")},
 
       // Colors
@@ -2478,6 +2483,7 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   insertUI(onionSkinDuringPlayback, lay);
   insertUI(shiftAndTraceGhostColorMode, lay,
            getComboItemList(shiftAndTraceGhostColorMode));
+  insertUI(shiftAndTraceAlignmentPerFrame, lay);
   insertUI(animatedGuidedDrawing, lay, getComboItemList(animatedGuidedDrawing));
 
   lay->setRowStretch(lay->rowCount(), 1);
@@ -2495,6 +2501,9 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(
       shiftAndTraceGhostColorMode,
+      &PreferencesPopup::onShiftAndTraceGhostColorModeChanged);
+  m_onEditedFuncMap.insert(
+      shiftAndTraceAlignmentPerFrame,
       &PreferencesPopup::onShiftAndTraceGhostColorModeChanged);
 
   connect(TApp::instance()->getCurrentOnionSkin(),

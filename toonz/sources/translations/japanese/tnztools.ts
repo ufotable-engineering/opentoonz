@@ -1728,6 +1728,14 @@ Do you want to proceed?</source>
         <source>Reset:</source>
         <translation>リセット:</translation>
     </message>
+    <message>
+        <source>Keep Alignment for Each Frame</source>
+        <translation>フレームごとに位置合わせを保持</translation>
+    </message>
+    <message>
+        <source>Each frame keeps the positions of the drawings and the trajectory, which come back when returning to the frame or turning Edit Shift on again</source>
+        <translation>コマの位置と軌道をフレームごとに保持し、そのフレームに戻ったときや「オフセット位置を変更」を再度オンにしたときに復元します</translation>
+    </message>
 </context>
 <context>
     <name>ShiftTraceToolOptionBox</name>

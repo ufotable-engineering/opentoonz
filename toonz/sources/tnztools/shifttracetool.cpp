@@ -327,7 +327,50 @@ void ShiftTraceTool::updateGhost() {
   osm.setShiftTraceGhostAff(1, m_aff[1]);
   osm.setShiftTraceGhostCenter(0, m_center[0]);
   osm.setShiftTraceGhostCenter(1, m_center[1]);
+  OnionSkinMask::ShiftTraceTrajectory trajectory;
+  trajectory.m_isValid = m_curveStatus == ThreePointsCurve;
+  trajectory.m_p0      = m_p0;
+  trajectory.m_p1      = m_p1;
+  trajectory.m_bend    = m_bend;
+  trajectory.m_ratio   = m_ratio;
+  osm.setShiftTraceTrajectory(trajectory);
+  m_maskAlignment = osm.getShiftTraceAlignment();
   TTool::getApplication()->getCurrentOnionSkin()->setOnionSkinMask(osm);
+}
+
+void ShiftTraceTool::loadGhosts() {
+  m_maskAlignment = TTool::getApplication()
+                        ->getCurrentOnionSkin()
+                        ->getOnionSkinMask()
+                        .getShiftTraceAlignment();
+  for (int i = 0; i < 2; i++) {
+    m_aff[i]    = m_maskAlignment.m_ghostAff[i];
+    m_center[i] = m_maskAlignment.m_ghostCenter[i];
+  }
+  const OnionSkinMask::ShiftTraceTrajectory &trajectory =
+      m_maskAlignment.m_trajectory;
+  m_curveStatus = NoCurve;
+  if (!trajectory.m_isValid ||
+      !Preferences::instance()->isShiftAndTraceAlignmentPerFrameEnabled())
+    return;
+  m_curveStatus = ThreePointsCurve;
+  m_p0          = trajectory.m_p0;
+  m_p1          = trajectory.m_p1;
+  m_bend        = trajectory.m_bend;
+  m_ratio       = trajectory.m_ratio;
+  m_p2          = trajectoryPoint(m_ratio);
+}
+
+// Switching to a frame brings back the alignment kept for it
+bool ShiftTraceTool::followMask() {
+  if (!Preferences::instance()->isShiftAndTraceAlignmentPerFrameEnabled() ||
+      TTool::getApplication()
+              ->getCurrentOnionSkin()
+              ->getOnionSkinMask()
+              .getShiftTraceAlignment() == m_maskAlignment)
+    return false;
+  loadGhosts();
+  return true;
 }
 
 void ShiftTraceTool::reset() {
@@ -474,12 +517,7 @@ void ShiftTraceTool::onActivate() {
   clearData();
   m_straightTrajectory.setValue(ShiftTraceStraightTrajectory ? 1 : 0);
   m_rotateAlongArc.setValue(ShiftTraceRotateAlongArc ? 1 : 0);
-  OnionSkinMask osm =
-      TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
-  m_aff[0]    = osm.getShiftTraceGhostAff(0);
-  m_aff[1]    = osm.getShiftTraceGhostAff(1);
-  m_center[0] = osm.getShiftTraceGhostCenter(0);
-  m_center[1] = osm.getShiftTraceGhostCenter(1);
+  loadGhosts();
 }
 
 void ShiftTraceTool::onDeactivate() {
@@ -598,6 +636,7 @@ void ShiftTraceTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 }
 
 void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
+  if (followMask()) m_highlightedGadget = getGadget(pos);
   m_gadget = m_highlightedGadget;
   m_oldPos = m_startPos = pos;
 
@@ -731,8 +770,8 @@ void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
       m_p2          = trajectoryPoint(m_ratio);
       m_curveStatus = ThreePointsCurve;
       updateCurveAffs();
-      updateGhost();
       updateCurveCenters();
+      updateGhost();
     }
   }
   m_gadget = NoGadget;
@@ -744,6 +783,7 @@ void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
 }
 
 void ShiftTraceTool::draw() {
+  followMask();
   updateData();
   drawControlRect();
   drawCurve();

@@ -8,10 +8,29 @@
 #include "toonz/txsheethandle.h"
 #include "toonz/tcolumnhandle.h"
 #include "toonz/txshsimplelevel.h"
+#include "toonz/txsheet.h"
+#include "toonz/preferences.h"
+#include "tools/toolhandle.h"
 
 #include "toonz/onionskinmask.h"
 
 #include <QMenu>
+
+#include <map>
+
+namespace {
+
+typedef std::pair<const void *, int> ShiftTraceFrame;
+
+// The ghosts are aligned to the drawings around the current frame, so each
+// frame keeps the alignment edited on it. A frame never edited takes over the
+// current alignment
+ShiftTraceFrame currentShiftTraceFrame;
+OnionSkinMask::ShiftTraceAlignment enteredShiftTraceAlignment;
+std::map<ShiftTraceFrame, OnionSkinMask::ShiftTraceAlignment>
+    keptShiftTraceAlignments;
+
+}  // namespace
 
 //=============================================================================
 // OnioniSkinMaskGUI::OnionSkinSwitcher
@@ -212,4 +231,49 @@ void OnioniSkinMaskGUI::resetShiftTraceFrameOffset() {
     }
     setGhostOffset(firstOffset, secondOffset);
   }
+}
+
+//------------------------------------------------------------------------------
+
+void OnioniSkinMaskGUI::updateShiftTraceFrame() {
+  TApp *app = TApp::instance();
+  ShiftTraceFrame frame;
+  if (app->getCurrentFrame()->isEditingLevel()) {
+    TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
+    if (level)
+      frame = {level, level->guessIndex(app->getCurrentFrame()->getFid())};
+  } else if (TXsheet *xsh = app->getCurrentXsheet()->getXsheet())
+    frame = {xsh->getColumn(app->getCurrentColumn()->getColumnIndex()),
+             app->getCurrentFrame()->getFrame()};
+  if (frame == currentShiftTraceFrame) return;
+
+  TOnionSkinMaskHandle *osmh = app->getCurrentOnionSkin();
+  const OnionSkinMask::ShiftTraceAlignment &alignment =
+      osmh->getOnionSkinMask().getShiftTraceAlignment();
+  if (!Preferences::instance()->isShiftAndTraceAlignmentPerFrameEnabled())
+    keptShiftTraceAlignments.clear();
+  else if (currentShiftTraceFrame.first &&
+           alignment != enteredShiftTraceAlignment)
+    keptShiftTraceAlignments[currentShiftTraceFrame] = alignment;
+
+  currentShiftTraceFrame = frame;
+  auto it                = keptShiftTraceAlignments.find(frame);
+  if (it == keptShiftTraceAlignments.end()) {
+    enteredShiftTraceAlignment = alignment;
+    return;
+  }
+  enteredShiftTraceAlignment = it->second;
+  OnionSkinMask osm          = osmh->getOnionSkinMask();
+  osm.setShiftTraceAlignment(it->second);
+  osmh->setOnionSkinMask(osm);
+  // Refreshes the reset buttons
+  app->getCurrentTool()->notifyToolChanged();
+}
+
+//------------------------------------------------------------------------------
+
+void OnioniSkinMaskGUI::clearShiftTraceFrames() {
+  keptShiftTraceAlignments.clear();
+  currentShiftTraceFrame = ShiftTraceFrame();
+  updateShiftTraceFrame();
 }

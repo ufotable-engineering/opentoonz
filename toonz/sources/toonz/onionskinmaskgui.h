@@ -17,6 +17,9 @@ void addOnionSkinCommand(QMenu *, bool isFilmStrip = false);
 
 void resetShiftTraceFrameOffset();
 
+void updateShiftTraceFrame();
+void clearShiftTraceFrames();
+
 //=============================================================================
 // OnionSkinSwitcher
 //-----------------------------------------------------------------------------
