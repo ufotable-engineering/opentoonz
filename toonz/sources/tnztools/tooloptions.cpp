@@ -3135,14 +3135,12 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     editShiftLayout->addLayout(ratioLayout, 2, 1);
   }
 
-  QHBoxLayout *optionLayout = new QHBoxLayout;
-  optionLayout->setContentsMargins(0, 0, 0, 0);
-  optionLayout->setSpacing(12);
+  QList<QCheckBox *> optionBoxes;
   for (int i = 0; i < pg->getPropertyCount(); i++) {
     TBoolProperty *bp = dynamic_cast<TBoolProperty *>(pg->getProperty(i));
     if (!bp) continue;
     ToolOptionCheckbox *cb = new ToolOptionCheckbox(m_tool, bp, toolHandle);
-    optionLayout->addWidget(cb, 0);
+    optionBoxes.push_back(cb);
     m_controls.push_back(cb);
   }
   m_alignmentPerFrameCB =
@@ -3155,8 +3153,15 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   connect(m_alignmentPerFrameCB, &QCheckBox::clicked, this, [](bool checked) {
     setOnionSkinPreference(shiftAndTraceAlignmentPerFrame, checked);
   });
-  optionLayout->addWidget(m_alignmentPerFrameCB, 0);
-  optionLayout->addStretch(1);
+  optionBoxes.push_back(m_alignmentPerFrameCB);
+  // In one row the checkboxes would make the panel too wide
+  QGridLayout *optionLayout = new QGridLayout;
+  optionLayout->setContentsMargins(0, 0, 0, 0);
+  optionLayout->setHorizontalSpacing(12);
+  optionLayout->setVerticalSpacing(6);
+  for (int i = 0; i < optionBoxes.size(); i++)
+    optionLayout->addWidget(optionBoxes[i], i / 2, i % 2);
+  optionLayout->setColumnStretch(2, 1);
   editShiftLayout->addLayout(optionLayout, 3, 0, 1, 2);
 
   QAction *editShiftAction = cm->getAction(MI_EditShift);

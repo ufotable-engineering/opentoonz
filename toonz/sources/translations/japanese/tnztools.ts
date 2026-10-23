@@ -1397,6 +1397,10 @@ Do you want to proceed?</source>
         <translation>回転を追従</translation>
     </message>
     <message>
+        <source>Align from Current Positions</source>
+        <translation>表示位置を基準に位置合わせ</translation>
+    </message>
+    <message>
         <source>Snap Ratio</source>
         <translation>ツメ指定</translation>
     </message>

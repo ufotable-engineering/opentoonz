@@ -52,6 +52,7 @@ private:
   TAffine m_dpiAff;
   int m_row[2];
   TAffine m_aff[2];
+  TAffine m_baseAff[2];  // m_aff before the trajectory is applied
   TPointD m_center[2];
 
   TAffine m_oldAff;
@@ -61,6 +62,7 @@ private:
   TPropertyGroup m_prop;
   TBoolProperty m_straightTrajectory;
   TBoolProperty m_rotateAlongArc;
+  TBoolProperty m_alignFromCurrentPositions;
   TStringProperty m_snapRatio;
   int m_snapDivision, m_snapNumerator;
   // Trajectory shape: signed distance of the arc apex from the p0-p1 chord
