@@ -50,10 +50,12 @@ public:
     bool m_isValid = false;
     TPointD m_p0, m_p1;
     double m_bend = 0, m_ratio = 0.5;
+    TAffine m_baseAff[2];  // ghost placements the trajectory moves from
 
     bool operator==(const ShiftTraceTrajectory &t) const {
       return m_isValid == t.m_isValid && m_p0 == t.m_p0 && m_p1 == t.m_p1 &&
-             m_bend == t.m_bend && m_ratio == t.m_ratio;
+             m_bend == t.m_bend && m_ratio == t.m_ratio &&
+             m_baseAff[0] == t.m_baseAff[0] && m_baseAff[1] == t.m_baseAff[1];
     }
   };
 
