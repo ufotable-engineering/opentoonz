@@ -708,12 +708,12 @@ void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 void ShiftTraceTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
   if (m_gadget == NoGadget || m_gadget == NoGadget_InBox) {
     if (norm(pos - m_oldPos) > 10 * getPixelSize()) {
-      m_curveStatus    = TwoPointsCurve;
-      m_p0             = m_oldPos;
-      m_gadget         = CurveP1Gadget;
-      bool fromCurrent = m_alignFromCurrentPositions.getValue();
+      m_curveStatus = TwoPointsCurve;
+      m_p0          = m_oldPos;
+      m_gadget      = CurveP1Gadget;
       for (int i = 0; i < 2; i++)
-        m_baseAff[i] = fromCurrent ? m_aff[i] : TAffine();
+        m_baseAff[i] =
+            m_alignFromCurrentPositions.getValue() ? m_aff[i] : TAffine();
     }
   }
 
