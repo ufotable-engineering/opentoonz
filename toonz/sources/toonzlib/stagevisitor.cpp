@@ -546,6 +546,8 @@ void RasterPainter::flushRasterImages() {
 
   Preferences::instance()->getOnionData(frontOnionColor, backOnionColor,
                                         onionInksOnly);
+  bool fadeGhostCheckColors =
+      Preferences::instance()->isOnionOpacityAppliedToCheckColors();
 
   // Stack every node on top of the raster buffer
   for (i = 0; i < nodesCount; ++i) {
@@ -690,6 +692,20 @@ void RasterPainter::flushRasterImages() {
             Preferences::instance()->getInk1CheckColor();
         settings.m_paintCheckColor =
             Preferences::instance()->getPaintCheckColor();
+
+        if (fadeGhostCheckColors && m_nodes[i].m_isGhost) {
+          int alpha                = m_nodes[i].m_alpha;
+          settings.m_inkCheckColor = antialias(settings.m_inkCheckColor, alpha);
+          settings.m_ink1CheckColor =
+              antialias(settings.m_ink1CheckColor, alpha);
+          settings.m_paintCheckColor =
+              antialias(settings.m_paintCheckColor, alpha);
+          settings.m_transpCheckBg = antialias(settings.m_transpCheckBg, alpha);
+          settings.m_transpCheckInk =
+              antialias(settings.m_transpCheckInk, alpha);
+          settings.m_transpCheckPaint =
+              antialias(settings.m_transpCheckPaint, alpha);
+        }
 
         // ==============================================================
         // Transparency Check: (see helper above)
@@ -1173,6 +1189,7 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
   int alpha                 = 255;
   Node::OnionMode onionMode = Node::eOnionSkinNone;
   bool halfColor            = false;
+  bool isGhost              = false;
   if (player.m_onionSkinDistance != c_noOnionSkin) {
     // GetOnionSkinFade is good for the vector while the raster works at the
     //    Opposite 1 opaque -> 0 completely transparent
@@ -1195,6 +1212,7 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
       halfColor = colorMode == Preferences::ShiftAndTraceGhost_HalfColor &&
                   onionMode != Node::eOnionSkinNone;
     }
+    isGhost = player.m_onionSkinDistance != 0;
 
   } else if (player.m_opacity < 255)
     alpha = player.m_opacity;
@@ -1202,7 +1220,7 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
   m_nodes.push_back(Node(r, ti->getPalette(), alpha, aff, ti->getSavebox(),
                          bbox, player.m_frame, player.m_isCurrentColumn,
                          onionMode, false, false, false, player.m_filterColor,
-                         halfColor));
+                         halfColor, isGhost));
 }
 
 //**********************************************************************************************

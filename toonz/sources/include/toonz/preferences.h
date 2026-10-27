@@ -513,6 +513,9 @@ public:
     backColor  = getColorValue(backOnionColor),
     inksOnly   = getBoolValue(onionInksOnly);
   }
+  bool isOnionOpacityAppliedToCheckColors() const {
+    return getBoolValue(applyOnionOpacityToCheckColors);
+  }
   bool getOnionSkinDuringPlayback() {
     return getBoolValue(onionSkinDuringPlayback);
   }
