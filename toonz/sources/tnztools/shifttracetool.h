@@ -52,7 +52,7 @@ private:
   TAffine m_dpiAff;
   int m_row[2];
   TAffine m_aff[2];
-  TAffine m_baseAff[2];  // m_aff before the trajectory is applied
+  TAffine m_baseAff[2];
   TPointD m_center[2];
 
   TAffine m_oldAff;

@@ -847,8 +847,7 @@ bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
   ShiftTraceRotateAlongArc     = (int)m_rotateAlongArc.getValue();
   ShiftTraceAlignFromCurrentPositions =
       (int)m_alignFromCurrentPositions.getValue();
-  // Only the next trajectory is affected. Recomputing the current one would
-  // drop the ghosts moved by hand after it was drawn
+  // Recomputing the trajectory would drop ghosts moved by hand after it
   if (propertyName == m_alignFromCurrentPositions.getName()) return true;
 
   bool ratioEntered = propertyName == m_snapRatio.getName();

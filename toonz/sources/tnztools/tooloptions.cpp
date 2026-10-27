@@ -3154,7 +3154,6 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     setOnionSkinPreference(shiftAndTraceAlignmentPerFrame, checked);
   });
   optionBoxes.push_back(m_alignmentPerFrameCB);
-  // In one row the checkboxes would make the panel too wide
   QGridLayout *optionLayout = new QGridLayout;
   optionLayout->setContentsMargins(0, 0, 0, 0);
   optionLayout->setHorizontalSpacing(12);
