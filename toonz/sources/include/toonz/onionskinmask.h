@@ -148,8 +148,18 @@ since underlying onion-skinned drawings must be visible.
   void setShowShiftOrigin(bool showShiftOrigin) {
     m_showShiftOrigin = showShiftOrigin;
   }
+  bool isShiftOriginForcedWhileEditing() const {
+    return m_shiftOriginForcedWhileEditing;
+  }
+  void setShiftOriginForcedWhileEditing(bool forced) {
+    m_shiftOriginForcedWhileEditing = forced;
+  }
   bool isShiftTraceEnabled() const { return m_shiftTraceStatus != DISABLED; }
   bool isEditingShift() const { return m_shiftTraceStatus == EDITING_GHOST; }
+  bool isShiftOriginHiddenWhileEditing() const {
+    return isEditingShift() && !m_shiftOriginForcedWhileEditing &&
+           !m_showShiftOrigin;
+  }
 
   const TAffine getShiftTraceGhostAff(int index) const {
     return m_shiftTrace.m_ghostAff[index];
@@ -206,6 +216,7 @@ private:
 
   ShiftTraceStatus m_shiftTraceStatus;
   bool m_showShiftOrigin;
+  bool m_shiftOriginForcedWhileEditing = true;
   ShiftTraceAlignment m_shiftTrace;
   QList<int> m_ghostFlipKeys;  // If F1, F2 or F3 key is pressed, then only
                                // display the corresponding ghost
