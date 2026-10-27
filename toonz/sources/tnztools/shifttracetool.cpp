@@ -384,6 +384,18 @@ bool ShiftTraceTool::followMask() {
   return true;
 }
 
+// Aligning from the current positions leaves the original positions of no use
+// while editing
+void ShiftTraceTool::updateShiftOriginVisibility() {
+  TOnionSkinMaskHandle *osmh = TTool::getApplication()->getCurrentOnionSkin();
+  bool show                  = !m_alignFromCurrentPositions.getValue();
+  if (osmh->getOnionSkinMask().isShowShiftOriginWhileEditing() == show) return;
+  OnionSkinMask osm = osmh->getOnionSkinMask();
+  osm.setShowShiftOriginWhileEditing(show);
+  osmh->setOnionSkinMask(osm);
+  osmh->notifyOnionSkinMaskChanged();
+}
+
 void ShiftTraceTool::reset() {
   int ghostIndex = m_ghostIndex;
   onActivate();
@@ -530,6 +542,7 @@ void ShiftTraceTool::onActivate() {
   m_rotateAlongArc.setValue(ShiftTraceRotateAlongArc ? 1 : 0);
   m_alignFromCurrentPositions.setValue(ShiftTraceAlignFromCurrentPositions ? 1
                                                                            : 0);
+  updateShiftOriginVisibility();
   loadGhosts();
 }
 
@@ -848,7 +861,10 @@ bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
   ShiftTraceAlignFromCurrentPositions =
       (int)m_alignFromCurrentPositions.getValue();
   // Recomputing the trajectory would drop ghosts moved by hand after it
-  if (propertyName == m_alignFromCurrentPositions.getName()) return true;
+  if (propertyName == m_alignFromCurrentPositions.getName()) {
+    updateShiftOriginVisibility();
+    return true;
+  }
 
   bool ratioEntered = propertyName == m_snapRatio.getName();
   if (ratioEntered) {

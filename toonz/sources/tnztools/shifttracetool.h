@@ -95,6 +95,7 @@ public:
   void updateGhost();
   void loadGhosts();
   bool followMask();
+  void updateShiftOriginVisibility();
 
   void reset() override;
 
