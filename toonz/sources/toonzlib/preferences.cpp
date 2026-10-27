@@ -668,6 +668,8 @@ void Preferences::definePreferenceItems() {
   define(frontOnionColor, "frontOnionColor", QMetaType::QColor,
          QColor(Qt::green));
   define(onionInksOnly, "onionInksOnly", QMetaType::Bool, false);
+  define(applyOnionOpacityToCheckColors, "applyOnionOpacityToCheckColors",
+         QMetaType::Bool, false);
   define(onionSkinDuringPlayback, "onionSkinDuringPlayback", QMetaType::Bool,
          false);
   define(shiftAndTraceGhostColorMode, "shiftAndTraceGhostColorMode",
