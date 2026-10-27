@@ -10532,6 +10532,10 @@ Also the initial output destination for new scenes will be set to $scenefolder a
         <translation>ライトテーブルの位置合わせをフレームごとに保持</translation>
     </message>
     <message>
+        <source>Apply Onion Skin Opacity to Check Colors</source>
+        <translation>チェック表示の色にもオニオンスキンの不透明度を適用する</translation>
+    </message>
+    <message>
         <source>Original Colors</source>
         <translation>本来の色</translation>
     </message>

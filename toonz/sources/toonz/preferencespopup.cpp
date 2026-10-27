@@ -1495,6 +1495,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {backOnionColor, tr("Previous Frames Correction:")},
       {frontOnionColor, tr("Following Frames Correction:")},
       {onionInksOnly, tr("Display Lines Only")},
+      {applyOnionOpacityToCheckColors,
+       tr("Apply Onion Skin Opacity to Check Colors")},
       {onionSkinDuringPlayback, tr("Show Onion Skin During Playback")},
       {shiftAndTraceGhostColorMode,
        tr("Color Mode for Reference Drawings of Shift and Trace:")},
@@ -2483,6 +2485,7 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   insertUI(backOnionColor, lay);
   insertUI(frontOnionColor, lay);
   insertUI(onionInksOnly, lay);
+  insertUI(applyOnionOpacityToCheckColors, lay);
   insertUI(onionSkinDuringPlayback, lay);
   insertUI(shiftAndTraceGhostColorMode, lay,
            getComboItemList(shiftAndTraceGhostColorMode));
@@ -2501,6 +2504,8 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   m_onEditedFuncMap.insert(frontOnionColor,
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(onionInksOnly,
+                           &PreferencesPopup::onOnionColorChanged);
+  m_onEditedFuncMap.insert(applyOnionOpacityToCheckColors,
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(shiftAndTraceGhostColorMode,
                            &PreferencesPopup::onShiftAndTraceSettingChanged);

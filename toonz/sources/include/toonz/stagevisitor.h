@@ -226,13 +226,15 @@ private:
 
     TPixel32 m_filterColor;
     bool m_halfColor;
+    bool m_fadeCheckColors;
 
   public:
     Node(const TRasterP &raster, TPalette *palette, int alpha,
          const TAffine &aff, const TRect &savebox, const TRectD &bbox,
          int frame, bool isCurrentColumn, OnionMode onionMode,
          bool doPremultiply, bool whiteTransp, bool isFirstColumn,
-         TPixel32 filterColor = TPixel32::Black, bool halfColor = false)
+         TPixel32 filterColor = TPixel32::Black, bool halfColor = false,
+         bool fadeCheckColors = false)
         : m_raster(raster)
         , m_aff(aff)
         , m_savebox(savebox)
@@ -246,7 +248,8 @@ private:
         , m_whiteTransp(whiteTransp)
         , m_isFirstColumn(isFirstColumn)
         , m_filterColor(filterColor)
-        , m_halfColor(halfColor) {}
+        , m_halfColor(halfColor)
+        , m_fadeCheckColors(fadeCheckColors) {}
   };
 
   struct VisualizationOptions {
