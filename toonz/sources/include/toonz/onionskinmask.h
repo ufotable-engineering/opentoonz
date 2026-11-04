@@ -50,10 +50,12 @@ public:
     bool m_isValid = false;
     TPointD m_p0, m_p1;
     double m_bend = 0, m_ratio = 0.5;
+    TAffine m_baseAff[2];
 
     bool operator==(const ShiftTraceTrajectory &t) const {
       return m_isValid == t.m_isValid && m_p0 == t.m_p0 && m_p1 == t.m_p1 &&
-             m_bend == t.m_bend && m_ratio == t.m_ratio;
+             m_bend == t.m_bend && m_ratio == t.m_ratio &&
+             m_baseAff[0] == t.m_baseAff[0] && m_baseAff[1] == t.m_baseAff[1];
     }
   };
 
@@ -146,8 +148,18 @@ since underlying onion-skinned drawings must be visible.
   void setShowShiftOrigin(bool showShiftOrigin) {
     m_showShiftOrigin = showShiftOrigin;
   }
+  bool isShiftOriginForcedWhileEditing() const {
+    return m_shiftOriginForcedWhileEditing;
+  }
+  void setShiftOriginForcedWhileEditing(bool forced) {
+    m_shiftOriginForcedWhileEditing = forced;
+  }
   bool isShiftTraceEnabled() const { return m_shiftTraceStatus != DISABLED; }
   bool isEditingShift() const { return m_shiftTraceStatus == EDITING_GHOST; }
+  bool isShiftOriginHiddenWhileEditing() const {
+    return isEditingShift() && !m_shiftOriginForcedWhileEditing &&
+           !m_showShiftOrigin;
+  }
 
   const TAffine getShiftTraceGhostAff(int index) const {
     return m_shiftTrace.m_ghostAff[index];
@@ -204,6 +216,7 @@ private:
 
   ShiftTraceStatus m_shiftTraceStatus;
   bool m_showShiftOrigin;
+  bool m_shiftOriginForcedWhileEditing = true;
   ShiftTraceAlignment m_shiftTrace;
   QList<int> m_ghostFlipKeys;  // If F1, F2 or F3 key is pressed, then only
                                // display the corresponding ghost
