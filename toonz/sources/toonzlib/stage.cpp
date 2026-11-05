@@ -508,7 +508,8 @@ void StageBuilder::addCell(PlayerSet &players, ToonzScene *scene, TXsheet *xsh,
           if (m_shiftTraceGhostId == FIRST_GHOST) {
             if ((m_editingShift || m_showShiftOrigin) &&
                 !m_onionSkinMask.isShiftOriginHiddenWhileEditing()) {
-              player.m_opacity = 30;
+              player.m_opacity              = 30;
+              player.m_isShiftAndTraceGhost = true;
               players.push_back(player);
             }
             player.m_opacity           = opacity;
@@ -520,7 +521,8 @@ void StageBuilder::addCell(PlayerSet &players, ToonzScene *scene, TXsheet *xsh,
           } else if (m_shiftTraceGhostId == SECOND_GHOST) {
             if ((m_editingShift || m_showShiftOrigin) &&
                 !m_onionSkinMask.isShiftOriginHiddenWhileEditing()) {
-              player.m_opacity = 30;
+              player.m_opacity              = 30;
+              player.m_isShiftAndTraceGhost = true;
               players.push_back(player);
             }
             player.m_opacity           = opacity;
@@ -805,7 +807,8 @@ void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
     player.m_bingoOrder = 10;
     if (m_onionSkinMask.getShiftTraceStatus() !=
         OnionSkinMask::ENABLED_WITHOUT_GHOST_MOVEMENTS) {
-      player.m_opacity = 30;
+      player.m_opacity              = 30;
+      player.m_isShiftAndTraceGhost = true;
       if (!m_onionSkinMask.isShiftOriginHiddenWhileEditing())
         players.push_back(player);
       player.m_opacity           = opacity;

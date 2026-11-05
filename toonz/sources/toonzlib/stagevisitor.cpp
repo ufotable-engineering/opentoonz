@@ -1189,7 +1189,7 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
   int alpha                 = 255;
   Node::OnionMode onionMode = Node::eOnionSkinNone;
   bool halfColor            = false;
-  bool isGhost              = false;
+  bool isGhost              = player.m_isShiftAndTraceGhost;
   if (player.m_onionSkinDistance != c_noOnionSkin) {
     // GetOnionSkinFade is good for the vector while the raster works at the
     //    Opposite 1 opaque -> 0 completely transparent
@@ -1212,7 +1212,7 @@ void RasterPainter::onToonzImage(TToonzImage *ti, const Stage::Player &player) {
       halfColor = colorMode == Preferences::ShiftAndTraceGhost_HalfColor &&
                   onionMode != Node::eOnionSkinNone;
     }
-    isGhost = player.m_onionSkinDistance != 0;
+    if (player.m_onionSkinDistance != 0) isGhost = true;
 
   } else if (player.m_opacity < 255)
     alpha = player.m_opacity;
