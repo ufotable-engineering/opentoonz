@@ -674,6 +674,8 @@ void Preferences::definePreferenceItems() {
          false);
   define(shiftAndTraceGhostColorMode, "shiftAndTraceGhostColorMode",
          QMetaType::Int, static_cast<int>(ShiftAndTraceGhost_OnionSkinColors));
+  define(shiftAndTraceGhostOpacity, "shiftAndTraceGhostOpacity", QMetaType::Int,
+         -1, -1, 100);
   define(shiftAndTraceAlignmentPerFrame, "shiftAndTraceAlignmentPerFrame",
          QMetaType::Bool, false);
   define(animatedGuidedDrawing, "animatedGuidedDrawing", QMetaType::Int,

@@ -523,6 +523,9 @@ public:
     return ShiftAndTraceGhostColorMode(
         getIntValue(shiftAndTraceGhostColorMode));
   }
+  int getShiftAndTraceGhostOpacity() const {
+    return getIntValue(shiftAndTraceGhostOpacity);
+  }
   bool isShiftAndTraceAlignmentPerFrameEnabled() const {
     return getBoolValue(shiftAndTraceAlignmentPerFrame);
   }

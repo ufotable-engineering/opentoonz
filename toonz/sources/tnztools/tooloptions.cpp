@@ -2973,18 +2973,29 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
 
   //---- Display
 
-  m_densityField = new DVGui::IntField(this);
-  m_densityField->setRange(0, 100);
-  m_densityField->setToolTip(
-      tr("Shared with the Paper Thickness of the onion skin (Paper Thickness = "
-         "100 - Density)"));
-  // Paper Thickness fades the drawings as it grows, so the panel shows its
-  // complement to read as a density. Wheel and page steps on the slider never
-  // report the end of a drag, so the value is saved on every change
-  connect(m_densityField, &DVGui::IntField::valueChanged, this, [this]() {
-    setOnionSkinPreference(onionPaperThickness,
-                           100 - m_densityField->getValue());
+  m_opacityField = new DVGui::IntField(this);
+  m_opacityField->setRange(1, 100);
+  // Wheel and page steps on the slider never report the end of a drag, so the
+  // value is saved on every change
+  connect(m_opacityField, &DVGui::IntField::valueChanged, this, [this]() {
+    setOnionSkinPreference(shiftAndTraceGhostOpacity,
+                           m_opacityField->getValue());
   });
+
+  m_opacityAutoCB = new DVGui::CheckBox(tr("Auto"), this);
+  m_opacityAutoCB->setFocusPolicy(Qt::NoFocus);
+  m_opacityAutoCB->setToolTip(
+      tr("Follow the Paper Thickness of the onion skin"));
+  connect(m_opacityAutoCB, &QCheckBox::clicked, this, [this](bool checked) {
+    setOnionSkinPreference(shiftAndTraceGhostOpacity,
+                           checked ? -1 : m_opacityField->getValue());
+  });
+
+  QHBoxLayout *opacityLayout = new QHBoxLayout;
+  opacityLayout->setContentsMargins(0, 0, 0, 0);
+  opacityLayout->setSpacing(6);
+  opacityLayout->addWidget(m_opacityField, 1);
+  opacityLayout->addWidget(m_opacityAutoCB, 0);
 
   QHBoxLayout *colorLayout = new QHBoxLayout;
   colorLayout->setContentsMargins(0, 0, 0, 0);
@@ -3040,9 +3051,9 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   QGridLayout *displayLayout = new QGridLayout(displayBox);
   displayLayout->setHorizontalSpacing(6);
   displayLayout->setVerticalSpacing(6);
-  displayLayout->addWidget(new QLabel(tr("Density:"), this), 0, 0,
+  displayLayout->addWidget(new QLabel(tr("Opacity:"), this), 0, 0,
                            Qt::AlignRight | Qt::AlignVCenter);
-  displayLayout->addWidget(m_densityField, 0, 1);
+  displayLayout->addLayout(opacityLayout, 0, 1);
   displayLayout->addWidget(new QLabel(tr("Color:"), this), 1, 0,
                            Qt::AlignRight | Qt::AlignVCenter);
   displayLayout->addLayout(colorLayout, 1, 1);
@@ -3286,7 +3297,13 @@ void ShiftTraceSettingsPane::onSnapPresetClicked() {
 
 void ShiftTraceSettingsPane::updateDisplayFields() {
   Preferences *pref = Preferences::instance();
-  m_densityField->setValue(100 - pref->getIntValue(onionPaperThickness));
+  int opacity       = pref->getShiftAndTraceGhostOpacity();
+  bool automatic    = opacity < 0;
+  if (automatic)
+    opacity = tround((1.0 - OnionSkinMask::getOnionSkinFade(1)) * 100.0);
+  QSignalBlocker opacityBlocker(m_opacityField);
+  m_opacityField->setValue(opacity);
+  m_opacityAutoCB->setChecked(automatic);
   for (int i = 0; i < 2; i++) {
     m_colorFields[i]->setColor(pref->getColorValue(kGhostColorIds[i]));
     m_ghostBtns[i]->setIcon(colorChipIcon(m_colorFields[i]->getColor()));

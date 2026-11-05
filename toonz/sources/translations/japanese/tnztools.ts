@@ -1665,8 +1665,12 @@ Do you want to proceed?</source>
 <context>
     <name>ShiftTraceSettingsPane</name>
     <message>
-        <source>Shared with the Paper Thickness of the onion skin (Paper Thickness = 100 - Density)</source>
-        <translation>オニオンスキンの紙厚と共通です（紙厚 = 100 − 濃度）</translation>
+        <source>Auto</source>
+        <translation>自動</translation>
+    </message>
+    <message>
+        <source>Follow the Paper Thickness of the onion skin</source>
+        <translation>オニオンスキンの紙厚に合わせます</translation>
     </message>
     <message>
         <source>Original Colors</source>
@@ -1697,8 +1701,8 @@ Do you want to proceed?</source>
         <translation>表示</translation>
     </message>
     <message>
-        <source>Density:</source>
-        <translation>濃度:</translation>
+        <source>Opacity:</source>
+        <translation>不透明度:</translation>
     </message>
     <message>
         <source>Color:</source>

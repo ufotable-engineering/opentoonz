@@ -189,6 +189,7 @@ enum PreferencesItemId {
   applyOnionOpacityToCheckColors,
   onionSkinDuringPlayback,
   shiftAndTraceGhostColorMode,
+  shiftAndTraceGhostOpacity,
   shiftAndTraceAlignmentPerFrame,
   animatedGuidedDrawing,
 
