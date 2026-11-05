@@ -513,12 +513,18 @@ public:
     backColor  = getColorValue(backOnionColor),
     inksOnly   = getBoolValue(onionInksOnly);
   }
+  bool isOnionOpacityAppliedToCheckColors() const {
+    return getBoolValue(applyOnionOpacityToCheckColors);
+  }
   bool getOnionSkinDuringPlayback() {
     return getBoolValue(onionSkinDuringPlayback);
   }
   ShiftAndTraceGhostColorMode getShiftAndTraceGhostColorMode() const {
     return ShiftAndTraceGhostColorMode(
         getIntValue(shiftAndTraceGhostColorMode));
+  }
+  int getShiftAndTraceGhostOpacity() const {
+    return getIntValue(shiftAndTraceGhostOpacity);
   }
   bool isShiftAndTraceAlignmentPerFrameEnabled() const {
     return getBoolValue(shiftAndTraceAlignmentPerFrame);
