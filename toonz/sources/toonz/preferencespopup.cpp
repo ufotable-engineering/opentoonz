@@ -824,6 +824,12 @@ void PreferencesPopup::onOnionColorChanged() {
 
 //-----------------------------------------------------------------------------
 
+void PreferencesPopup::onShiftAndTraceSettingChanged() {
+  TApp::instance()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
+}
+
+//-----------------------------------------------------------------------------
+
 void invalidateIcons();  // TODO: Find the appropriate header for this
                          // declaration
 
@@ -862,6 +868,27 @@ void PreferencesPopup::onAutoSaveExternallyChanged() {
 void PreferencesPopup::onAutoSavePeriodExternallyChanged() {
   IntLineEdit* minuteFld = getUI<IntLineEdit*>(autosavePeriod);
   minuteFld->setValue(m_pref->getIntValue(autosavePeriod));
+}
+
+//-----------------------------------------------------------------------------
+
+void PreferencesPopup::onOnionSkinExternallyChanged() {
+  getUI<IntLineEdit*>(onionPaperThickness)
+      ->setValue(m_pref->getIntValue(onionPaperThickness));
+  getUI<ColorField*>(backOnionColor)
+      ->setColor(m_pref->getColorValue(backOnionColor));
+  getUI<ColorField*>(frontOnionColor)
+      ->setColor(m_pref->getColorValue(frontOnionColor));
+  CheckBox* inksOnlyCB = getUI<CheckBox*>(onionInksOnly);
+  QSignalBlocker inksOnlyBlocker(inksOnlyCB);
+  inksOnlyCB->setChecked(m_pref->getBoolValue(onionInksOnly));
+  QComboBox* combo = getUI<QComboBox*>(shiftAndTraceGhostColorMode);
+  QSignalBlocker blocker(combo);
+  combo->setCurrentIndex(
+      combo->findData(m_pref->getIntValue(shiftAndTraceGhostColorMode)));
+  CheckBox* alignmentCB = getUI<CheckBox*>(shiftAndTraceAlignmentPerFrame);
+  QSignalBlocker alignmentBlocker(alignmentCB);
+  alignmentCB->setChecked(m_pref->getBoolValue(shiftAndTraceAlignmentPerFrame));
 }
 
 //-----------------------------------------------------------------------------
@@ -1412,6 +1439,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Geometric Tool: Click Twice to Create Arcs")},
       {tempToolSwitchTimer,
        tr("Switch Tool Temporarily Keypress Length (ms):")},
+      {keepToolOnViewNavigation,
+       tr("Keep Tool Editing State during Pan, Zoom and Rotate View")},
       {animateToolHandleSize, tr("Handle Size (%):")},
       {animateToolColor, tr("Handle Color:")},
       {defaultStartupTool, tr("Default Startup and New Scene Tool:")},
@@ -1485,9 +1514,13 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {backOnionColor, tr("Previous Frames Correction:")},
       {frontOnionColor, tr("Following Frames Correction:")},
       {onionInksOnly, tr("Display Lines Only")},
+      {applyOnionOpacityToCheckColors,
+       tr("Apply Onion Skin Opacity to Check Colors")},
       {onionSkinDuringPlayback, tr("Show Onion Skin During Playback")},
-      {useOnionColorsForShiftAndTraceGhosts,
-       tr("Use Onion Skin Colors for Reference Drawings of Shift and Trace")},
+      {shiftAndTraceGhostColorMode,
+       tr("Color Mode for Reference Drawings of Shift and Trace:")},
+      {shiftAndTraceAlignmentPerFrame,
+       tr("Keep Shift and Trace Alignment for Each Frame")},
       {animatedGuidedDrawing, tr("Vector Guided Style:")},
 
       // Colors
@@ -1518,7 +1551,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Use Qt's Native Windows Ink Support*\n(CAUTION: This options is "
           "for "
           "maintenance purpose. \n Do not activate this option or the tablet "
-          "won't work properly.)")}};
+          "won't work properly.)")},
+      {alignTabletStrokesToCursor, tr("Align Tablet Strokes to the Cursor")}};
 
   return uiStringTable.value(id, QString());
 }
@@ -1666,6 +1700,11 @@ QList<ComboBoxItem> PreferencesPopup::getComboItemList(
         {tr("Exponential"), 6},
         {tr("Expression "), 7},
         {tr("File"), 8}}},
+      {shiftAndTraceGhostColorMode,
+       {{tr("Original Colors"), Preferences::ShiftAndTraceGhost_OriginalColors},
+        {tr("Onion Skin Colors"),
+         Preferences::ShiftAndTraceGhost_OnionSkinColors},
+        {tr("Half Color"), Preferences::ShiftAndTraceGhost_HalfColor}}},
       {animatedGuidedDrawing,
        {{tr("Arrow Markers"), 0}, {tr("Animated Guide"), 1}}}};
 
@@ -2299,6 +2338,7 @@ QWidget* PreferencesPopup::createToolsPage() {
              "ordinary mouse movement on Windows is unaffected. "
              "Separate tool-level input limits remain in effect. "
              "Changes take effect after restarting OpenToonz."));
+  insertUI(keepToolOnViewNavigation, lay);
 
   QGridLayout* animateToolLay = insertGroupBox(tr("Animate Tool"), lay);
   {
@@ -2550,8 +2590,11 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   insertUI(backOnionColor, lay);
   insertUI(frontOnionColor, lay);
   insertUI(onionInksOnly, lay);
+  insertUI(applyOnionOpacityToCheckColors, lay);
   insertUI(onionSkinDuringPlayback, lay);
-  insertUI(useOnionColorsForShiftAndTraceGhosts, lay);
+  insertUI(shiftAndTraceGhostColorMode, lay,
+           getComboItemList(shiftAndTraceGhostColorMode));
+  insertUI(shiftAndTraceAlignmentPerFrame, lay);
   insertUI(animatedGuidedDrawing, lay, getComboItemList(animatedGuidedDrawing));
 
   lay->setRowStretch(lay->rowCount(), 1);
@@ -2560,13 +2603,23 @@ QWidget* PreferencesPopup::createOnionSkinPage() {
   m_onEditedFuncMap.insert(onionSkinEnabled,
                            &PreferencesPopup::onOnionSkinVisibilityChanged);
   m_onEditedFuncMap.insert(onionPaperThickness,
-                           &PreferencesPopup::notifySceneChanged);
+                           &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(backOnionColor,
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(frontOnionColor,
                            &PreferencesPopup::onOnionColorChanged);
   m_onEditedFuncMap.insert(onionInksOnly,
-                           &PreferencesPopup::notifySceneChanged);
+                           &PreferencesPopup::onOnionColorChanged);
+  m_onEditedFuncMap.insert(applyOnionOpacityToCheckColors,
+                           &PreferencesPopup::onOnionColorChanged);
+  m_onEditedFuncMap.insert(shiftAndTraceGhostColorMode,
+                           &PreferencesPopup::onShiftAndTraceSettingChanged);
+  m_onEditedFuncMap.insert(shiftAndTraceAlignmentPerFrame,
+                           &PreferencesPopup::onShiftAndTraceSettingChanged);
+
+  connect(TApp::instance()->getCurrentOnionSkin(),
+          &TOnionSkinMaskHandle::onionSkinMaskChanged, this,
+          &PreferencesPopup::onOnionSkinExternallyChanged);
 
   bool onionActive = m_pref->getBoolValue(onionSkinEnabled);
   if (!onionActive) {
@@ -2751,6 +2804,7 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
   lay->addWidget(enableTouchGestures, 0, 0, 1, 2);
   if (winInkAvailable) insertUI(winInkEnabled, lay);
 #ifdef WITH_WINTAB
+  insertUI(alignTabletStrokesToCursor, lay);
   insertUI(useQtNativeWinInk, lay);
 #endif
 

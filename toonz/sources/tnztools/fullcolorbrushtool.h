@@ -51,6 +51,17 @@ public:
         : brush(ras, controller, brush) {}
   };
 
+  class PencilTrackHandler : public TTrackHandler {
+  public:
+    RasterStrokeGenerator brush;
+
+    PencilTrackHandler(const TRasterCM32P &mask, const TThickPoint &p,
+                       bool subPixel)
+        : brush(mask, BRUSH, NONE, 1, p, false, 0, false, false) {
+      brush.setSubPixel(subPixel);
+    }
+  };
+
 private:
   void updateCurrentStyle();
   void applyClassicToonzBrushSettings(mypaint::Brush &mypaintBrush);
@@ -113,9 +124,15 @@ public:
 
   TMyPaintBrushStyle *getBrushStyle();
 
+  bool isPencilModeActive() override;
+
 private:
   void updateModifiers();
   void commitStroke();
+  bool isSubPixelPencil() const;
+  bool paintPencilTrackPoint(const TTrackPoint &point, const TTrack &track,
+                             const TRaster32P &ras);
+  void drawPencilCursor(const TDimension &rasSize);
 
   enum MouseEventType { ME_DOWN, ME_DRAG, ME_UP, ME_MOVE };
   void handleMouseEvent(MouseEventType type, const TPointD &pos,
@@ -134,7 +151,7 @@ protected:
 
   TPropertyGroup m_prop;
 
-  TIntPairProperty m_thickness;
+  TDoublePairProperty m_thickness;
   TBoolProperty m_pressure;
   TDoublePairProperty m_opacity;
   TDoubleProperty m_hardness;
@@ -142,12 +159,13 @@ protected:
   TDoubleProperty m_modifierOpacity;
   TBoolProperty m_modifierEraser;
   TBoolProperty m_modifierLockAlpha;
+  TBoolProperty m_pencil;
   TBoolProperty m_assistants;
   TEnumProperty m_preset;
 
   TPixel32 m_currentColor;
   bool m_enabledPressure;
-  int m_minCursorThick, m_maxCursorThick;
+  double m_minCursorThick, m_maxCursorThick;
 
   TPointD m_mousePos,  //!< Current mouse position, in world coordinates.
       m_brushPos;      //!< World position the brush will be painted at.
@@ -173,6 +191,11 @@ protected:
 
   bool m_propertyUpdating    = false;
   bool m_skipStrokeUntilDown = false;
+
+  TRasterCM32P m_pencilMask;
+  TPixel32 m_pencilColor;  // premultiplied
+  bool m_pencilStroke   = false;
+  bool m_pencilSubPixel = false;
 };
 
 //------------------------------------------------------------

@@ -226,6 +226,8 @@ class DVAPI DoublePairField : public DoubleValuePairField {
 public:
   DoublePairField(QWidget *parent = 0, bool isMaxRangeLimited = true);
   ~DoublePairField() {}
+
+  void setDecimals(int decimals);
 };
 
 //=============================================================================

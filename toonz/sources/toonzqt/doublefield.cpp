@@ -474,6 +474,19 @@ DoubleField::DoubleField(QWidget *parent, bool isRollerHide, int decimals)
   if (!isRollerHide) m_roller->setStep(std::pow(0.1, decimals));
 }
 
+//-----------------------------------------------------------------------------
+
+void DoubleField::setDecimals(int decimals) {
+  DoubleLineEdit *lineEdit = qobject_cast<DoubleLineEdit *>(m_lineEdit);
+  assert(lineEdit);
+  double minValue, maxValue;
+  lineEdit->getRange(minValue, maxValue);
+  lineEdit->setDecimals(decimals);
+  m_roller->setStep(std::pow(0.1, decimals));
+  // The slider counts in steps of the last decimal, so its range must follow.
+  setRange(minValue, maxValue);
+}
+
 //=============================================================================
 // MeasuredDoubleLineEdit
 //-----------------------------------------------------------------------------

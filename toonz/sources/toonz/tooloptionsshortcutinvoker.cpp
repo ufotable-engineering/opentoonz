@@ -478,6 +478,8 @@ void ToolOptionsShortcutInvoker::initialize() {
                     &ToolOptionsShortcutInvoker::toggleGeometricMultiArc);
   setCommandHandler(MI_GeometricPolygon, this,
                     &ToolOptionsShortcutInvoker::toggleGeometricPolygon);
+  setCommandHandler(MI_GeometricSpline, this,
+                    &ToolOptionsShortcutInvoker::toggleGeometricSpline);
 
   /*-- Type tool + style switching shortcuts --*/
   setCommandHandler(MI_TypeNextStyle, this,
@@ -822,6 +824,13 @@ void ToolOptionsShortcutInvoker::toggleGeometricPolygon() {
   CommandManager::instance()->getAction(T_Geometric)->trigger();
   CommandManager::instance()
       ->getAction("A_ToolOption_GeometricShape:Polygon")
+      ->trigger();
+}
+
+void ToolOptionsShortcutInvoker::toggleGeometricSpline() {
+  CommandManager::instance()->getAction(T_Geometric)->trigger();
+  CommandManager::instance()
+      ->getAction("A_ToolOption_GeometricShape:Spline")
       ->trigger();
 }
 

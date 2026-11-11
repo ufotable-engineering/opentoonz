@@ -580,6 +580,8 @@ void Preferences::definePreferenceItems() {
          true);
   define(tempToolSwitchTimer, "tempToolSwitchTimer", QMetaType::Int, 500, 1,
          std::numeric_limits<int>::max());
+  define(keepToolOnViewNavigation, "keepToolOnViewNavigation", QMetaType::Bool,
+         false);
   define(animateToolHandleSize, "animateToolHandleSize", QMetaType::Double, 1.0,
          0.01, 6.0);
   define(animateToolColor, "animateToolColor", QMetaType::QColor,
@@ -681,10 +683,16 @@ void Preferences::definePreferenceItems() {
   define(frontOnionColor, "frontOnionColor", QMetaType::QColor,
          QColor(Qt::green));
   define(onionInksOnly, "onionInksOnly", QMetaType::Bool, false);
+  define(applyOnionOpacityToCheckColors, "applyOnionOpacityToCheckColors",
+         QMetaType::Bool, false);
   define(onionSkinDuringPlayback, "onionSkinDuringPlayback", QMetaType::Bool,
          false);
-  define(useOnionColorsForShiftAndTraceGhosts,
-         "useOnionColorsForShiftAndTraceGhosts", QMetaType::Bool, true);
+  define(shiftAndTraceGhostColorMode, "shiftAndTraceGhostColorMode",
+         QMetaType::Int, static_cast<int>(ShiftAndTraceGhost_OnionSkinColors));
+  define(shiftAndTraceGhostOpacity, "shiftAndTraceGhostOpacity", QMetaType::Int,
+         -1, -1, 100);
+  define(shiftAndTraceAlignmentPerFrame, "shiftAndTraceAlignmentPerFrame",
+         QMetaType::Bool, false);
   define(animatedGuidedDrawing, "animatedGuidedDrawing", QMetaType::Int,
          0);  // Arrow Markers
 
@@ -720,8 +728,10 @@ void Preferences::definePreferenceItems() {
 
   // Touch / Tablet Settings
   define(winInkEnabled, "winInkEnabled", QMetaType::Bool, false);
-  // This option will be shown & available only when WITH_WINTAB is defined
+  // These options will be shown & available only when WITH_WINTAB is defined
   define(useQtNativeWinInk, "useQtNativeWinInk", QMetaType::Bool, false);
+  define(alignTabletStrokesToCursor, "alignTabletStrokesToCursor",
+         QMetaType::Bool, false);
 
   // Others (not appearing in the popup)
   // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.
@@ -879,6 +889,12 @@ void Preferences::resolveCompatibility() {
         true)
       setValue(cellInputMethod, 2);
   }
+  // "useOnionColorsForShiftAndTraceGhosts" is changed to
+  // "shiftAndTraceGhostColorMode", adding the Half Color option.
+  if (m_settings->contains("useOnionColorsForShiftAndTraceGhosts") &&
+      !m_settings->contains("shiftAndTraceGhostColorMode") &&
+      !m_settings->value("useOnionColorsForShiftAndTraceGhosts").toBool())
+    setValue(shiftAndTraceGhostColorMode, ShiftAndTraceGhost_OriginalColors);
 }
 
 //-----------------------------------------------------------------

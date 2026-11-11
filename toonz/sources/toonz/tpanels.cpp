@@ -1711,6 +1711,56 @@ OpenFloatingPanel openVectorGuidedDrawingPanelCommand(
     MI_OpenGuidedDrawingControls, "VectorGuidedDrawingPanel",
     QObject::tr("Vector Guided Drawing"));
 
+//=========================================================
+// ShiftTraceSettingsPanel
+//---------------------------------------------------------
+
+ShiftTraceSettingsPanel::ShiftTraceSettingsPanel(QWidget *parent)
+    : TPanel(parent) {
+  setWidget(new ShiftTraceSettingsPane(this));
+  setIsMaximizable(false);
+}
+
+//-----------------------------------------------------------------------------
+// The contents change width with the language, and the style sheet is applied
+// only after the panels of the rooms are created, so the minimum size is taken
+// from the layout once the panel is shown
+
+void ShiftTraceSettingsPanel::showEvent(QShowEvent *) {
+  setMinimumSize(minimumSizeHint());
+}
+
+//-----------------------------------------------------------------------------
+// The contents do not stretch, so only the saved position is kept
+
+void ShiftTraceSettingsPanel::restoreFloatingPanelState() {
+  TPanel::restoreFloatingPanelState();
+  ensurePolished();
+  resize(minimumSizeHint());
+}
+
+//=============================================================================
+// ShiftTraceSettingsFactory
+//-----------------------------------------------------------------------------
+
+class ShiftTraceSettingsFactory final : public TPanelFactory {
+public:
+  ShiftTraceSettingsFactory() : TPanelFactory("ShiftTraceSettings") {}
+  TPanel *createPanel(QWidget *parent) override {
+    TPanel *panel = new ShiftTraceSettingsPanel(parent);
+    panel->setObjectName(getPanelType());
+    panel->setWindowTitle(QObject::tr("Shift and Trace Settings"));
+    panel->allowMultipleInstances(false);
+    return panel;
+  }
+  void initialize(TPanel *panel) override {}
+} shiftTraceSettingsFactory;
+
+//=============================================================================
+OpenFloatingPanel openShiftTraceSettingsCommand(
+    MI_OpenShiftTraceSettings, "ShiftTraceSettings",
+    QObject::tr("Shift and Trace Settings"));
+
 //-----------------------------------------------------------------------------
 
 namespace {

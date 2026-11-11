@@ -190,6 +190,7 @@ protected slots:
   void toggleGeometricArc();
   void toggleGeometricMultiArc();
   void toggleGeometricPolygon();
+  void toggleGeometricSpline();
 
   /*-- Type tool + style switching shortcuts --*/
   void toggleTypeNextStyle();

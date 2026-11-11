@@ -25,7 +25,6 @@ double Player::m_onionSkinBackSize    = 0;
 double Player::m_firstFrontOnionSkin  = 0;
 double Player::m_firstBackOnionSkin   = 0;
 double Player::m_lastBackVisibleSkin  = 0;
-bool Player::m_isShiftAndTraceEnabled = false;
 
 //-----------------------------------------------------------------------------
 

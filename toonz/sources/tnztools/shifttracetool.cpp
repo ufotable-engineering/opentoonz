@@ -23,10 +23,19 @@
 
 #include "toonz/preferences.h"
 #include "toonzqt/gutil.h"
+#include "tenv.h"
 
 #include "tgl.h"
 #include <math.h>
 #include <QKeyEvent>
+
+//=============================================================================
+
+TEnv::IntVar ShiftTraceStraightTrajectory("ShiftTraceToolStraightTrajectory",
+                                          0);
+TEnv::IntVar ShiftTraceRotateAlongArc("ShiftTraceToolRotateAlongArc", 1);
+TEnv::IntVar ShiftTraceAlignFromCurrentPositions(
+    "ShiftTraceToolAlignFromCurrentPositions", 0);
 
 //=============================================================================
 
@@ -55,8 +64,32 @@ ShiftTraceTool::ShiftTraceTool()
     , m_ghostIndex(0)
     , m_curveStatus(NoCurve)
     , m_gadget(NoGadget)
-    , m_highlightedGadget(NoGadget) {
+    , m_highlightedGadget(NoGadget)
+    , m_straightTrajectory("Straight Trajectory", false)
+    , m_rotateAlongArc("Rotate Along Arc", true)
+    , m_alignFromCurrentPositions("Align from Current Positions", false)
+    , m_snapRatio("Snap Ratio", L"")
+    , m_snapDivision(0)
+    , m_snapNumerator(0)
+    , m_bend(0)
+    , m_ratio(0.5) {
   bind(TTool::AllTargets);  // Deals with tool deactivation internally
+  m_prop.bind(m_straightTrajectory);
+  m_prop.bind(m_rotateAlongArc);
+  m_prop.bind(m_alignFromCurrentPositions);
+  m_prop.bind(m_snapRatio);
+  m_straightTrajectory.setId("StraightTrajectory");
+  m_rotateAlongArc.setId("RotateAlongArc");
+  m_alignFromCurrentPositions.setId("AlignFromCurrentPositions");
+  m_snapRatio.setId("SnapRatio");
+}
+
+void ShiftTraceTool::updateTranslation() {
+  m_straightTrajectory.setQStringName(QObject::tr("Straight Trajectory"));
+  m_rotateAlongArc.setQStringName(QObject::tr("Rotate Along Arc"));
+  m_alignFromCurrentPositions.setQStringName(
+      QObject::tr("Align from Current Positions"));
+  m_snapRatio.setQStringName(QObject::tr("Snap Ratio"));
 }
 
 void ShiftTraceTool::clearData() {
@@ -64,12 +97,15 @@ void ShiftTraceTool::clearData() {
   m_curveStatus       = NoCurve;
   m_gadget            = NoGadget;
   m_highlightedGadget = NoGadget;
+  m_bend              = 0;
+  m_ratio             = 0.5;
 
   m_box = TRectD();
   for (int i = 0; i < 2; i++) {
-    m_row[i]    = -1;
-    m_aff[i]    = TAffine();
-    m_center[i] = TPointD();
+    m_row[i]     = -1;
+    m_aff[i]     = TAffine();
+    m_baseAff[i] = TAffine();
+    m_center[i]  = TPointD();
   }
 }
 
@@ -166,27 +202,131 @@ void ShiftTraceTool::updateData() {
   updateBox();
 }
 
+TPointD ShiftTraceTool::chordNormal() const {
+  TPointD d = m_p1 - m_p0;
+  if (norm2(d) <= 0) return TPointD(0, 1);
+  return normalize(rotate90(d));
+}
+
+TPointD ShiftTraceTool::arcApex() const {
+  return (m_p0 + m_p1) * 0.5 + chordNormal() * m_bend;
+}
+
+// Handles sit off the trajectory so they never overlap the midpoint gadget
+double ShiftTraceTool::bendHandleOffset() const { return 50 * getPixelSize(); }
+
+// A straight trajectory is treated like collinear points: no arc, so the
+// ghosts are translated without rotation. The sweep sign picks the side of
+// the circle that contains the apex
+ShiftTraceTool::Trajectory ShiftTraceTool::getTrajectory() const {
+  Trajectory t;
+  TPointD apex = arcApex();
+  t.isArc      = !m_straightTrajectory.getValue() &&
+            circumCenter(t.center, m_p0, m_p1, apex);
+  if (!t.isArc) return t;
+  t.radius        = norm(m_p0 - t.center);
+  t.angle0        = atan(m_p0 - t.center);
+  double angle1   = atan(m_p1 - t.center);
+  double angleRef = atan(apex - t.center);
+  double ccw1     = fmod(angle1 - t.angle0 + M_2PI, M_2PI);
+  double ccwRef   = fmod(angleRef - t.angle0 + M_2PI, M_2PI);
+  t.sweep         = ccwRef < ccw1 ? ccw1 : ccw1 - M_2PI;
+  return t;
+}
+
+TPointD ShiftTraceTool::trajectoryPoint(const Trajectory &t,
+                                        double ratio) const {
+  if (!t.isArc) return m_p0 + (m_p1 - m_p0) * ratio;
+  double angle = t.angle0 + t.sweep * ratio;
+  return t.center + t.radius * TPointD(cos(angle), sin(angle));
+}
+
+TPointD ShiftTraceTool::trajectoryPoint(double ratio) const {
+  return trajectoryPoint(getTrajectory(), ratio);
+}
+
+double ShiftTraceTool::trajectoryRatio(const TPointD &pos) const {
+  Trajectory t = getTrajectory();
+  if (!t.isArc) {
+    TPointD d   = m_p1 - m_p0;
+    double len2 = d * d;
+    if (len2 <= 0) return 0.5;
+    return tcrop(((pos - m_p0) * d) / len2, 0.0, 1.0);
+  }
+  double angle     = atan(pos - t.center);
+  double travelled = t.sweep > 0 ? fmod(angle - t.angle0 + M_2PI, M_2PI)
+                                 : fmod(t.angle0 - angle + M_2PI, M_2PI);
+  double ratio     = travelled / fabs(t.sweep);
+  // Beyond p1 the position is on the complementary arc: pick the nearer end
+  if (ratio > 1.0)
+    ratio = (ratio - 1.0 < M_2PI / fabs(t.sweep) - ratio) ? 1 : 0;
+  return tcrop(ratio, 0.0, 1.0);
+}
+
+// End points are excluded: they are the keys themselves, not inbetweens
+double ShiftTraceTool::snapRatio(double ratio) const {
+  if (m_snapDivision < 2) return ratio;
+  int k = tcrop(tround(ratio * m_snapDivision), 1, m_snapDivision - 1);
+  return (double)k / m_snapDivision;
+}
+
+double ShiftTraceTool::snapOrJump(double ratio) const {
+  return m_snapNumerator > 0 ? (double)m_snapNumerator / m_snapDivision
+                             : snapRatio(ratio);
+}
+
+// Accepts "a/b": jumps to a/b and snaps to b-ths
+void ShiftTraceTool::parseSnapRatio() {
+  QString text      = QString::fromStdWString(m_snapRatio.getValue()).trimmed();
+  QStringList parts = text.split(QChar('/'));
+  bool okNum = false, okDen = false;
+  int num = 0, den = 0;
+  if (parts.size() == 2) {
+    num = parts[0].trimmed().toInt(&okNum);
+    den = parts[1].trimmed().toInt(&okDen);
+  }
+  if (!okNum || !okDen || den < 2 || den > kMaxSnapDivision || num < 1 ||
+      num >= den)
+    den = num = 0;
+  m_snapDivision  = den;
+  m_snapNumerator = num;
+  updateSnapRatioText();
+}
+
+void ShiftTraceTool::updateSnapRatioText() {
+  QString text;
+  if (m_snapDivision >= 2)
+    text = QString("%1/%2").arg(m_snapNumerator).arg(m_snapDivision);
+  m_snapRatio.setValue(text.toStdWString());
+}
+
 //
 // Compute m_aff[0] and m_aff[1] according to the current curve
 //
 void ShiftTraceTool::updateCurveAffs() {
   if (m_curveStatus != ThreePointsCurve) {
-    m_aff[0] = m_aff[1] = TAffine();
+    m_aff[0] = m_baseAff[0];
+    m_aff[1] = m_baseAff[1];
   } else {
     double phi0 = 0, phi1 = 0;
-    TPointD center;
-    if (circumCenter(center, m_p0, m_p1, m_p2)) {
-      TPointD v0 = normalize(m_p0 - center);
-      TPointD v1 = normalize(m_p1 - center);
-      TPointD v2 = normalize(m_p2 - center);
+    Trajectory t = getTrajectory();
+    if (m_rotateAlongArc.getValue() && t.isArc) {
+      TPointD v0 = normalize(m_p0 - t.center);
+      TPointD v1 = normalize(m_p1 - t.center);
+      TPointD v2 = normalize(m_p2 - t.center);
       TPointD u0(-v0.y, v0.x);
       TPointD u1(-v1.y, v1.x);
       phi0 = atan2((v2 * u0), (v2 * v0)) * 180.0 / 3.1415;
       phi1 = atan2((v2 * u1), (v2 * v1)) * 180.0 / 3.1415;
     }
-    m_aff[0] = TTranslation(m_p2 - m_p0) * TRotation(m_p0, phi0);
-    m_aff[1] = TTranslation(m_p2 - m_p1) * TRotation(m_p1, phi1);
+    m_aff[0] = TTranslation(m_p2 - m_p0) * TRotation(m_p0, phi0) * m_baseAff[0];
+    m_aff[1] = TTranslation(m_p2 - m_p1) * TRotation(m_p1, phi1) * m_baseAff[1];
   }
+}
+
+void ShiftTraceTool::updateCurveCenters() {
+  m_center[0] = (m_aff[0] * m_dpiAff).inv() * m_p2;
+  m_center[1] = (m_aff[1] * m_dpiAff).inv() * m_p2;
 }
 
 void ShiftTraceTool::updateGhost() {
@@ -196,7 +336,63 @@ void ShiftTraceTool::updateGhost() {
   osm.setShiftTraceGhostAff(1, m_aff[1]);
   osm.setShiftTraceGhostCenter(0, m_center[0]);
   osm.setShiftTraceGhostCenter(1, m_center[1]);
+  OnionSkinMask::ShiftTraceTrajectory trajectory;
+  trajectory.m_isValid = m_curveStatus == ThreePointsCurve;
+  trajectory.m_p0      = m_p0;
+  trajectory.m_p1      = m_p1;
+  trajectory.m_bend    = m_bend;
+  trajectory.m_ratio   = m_ratio;
+  for (int i = 0; i < 2; i++) trajectory.m_baseAff[i] = m_baseAff[i];
+  osm.setShiftTraceTrajectory(trajectory);
+  m_maskAlignment = osm.getShiftTraceAlignment();
   TTool::getApplication()->getCurrentOnionSkin()->setOnionSkinMask(osm);
+}
+
+void ShiftTraceTool::loadGhosts() {
+  m_maskAlignment = TTool::getApplication()
+                        ->getCurrentOnionSkin()
+                        ->getOnionSkinMask()
+                        .getShiftTraceAlignment();
+  const OnionSkinMask::ShiftTraceTrajectory &trajectory =
+      m_maskAlignment.m_trajectory;
+  for (int i = 0; i < 2; i++) {
+    m_aff[i]     = m_maskAlignment.m_ghostAff[i];
+    m_baseAff[i] = trajectory.m_baseAff[i];
+    m_center[i]  = m_maskAlignment.m_ghostCenter[i];
+  }
+  m_curveStatus = NoCurve;
+  if (!trajectory.m_isValid ||
+      !Preferences::instance()->isShiftAndTraceAlignmentPerFrameEnabled())
+    return;
+  m_curveStatus = ThreePointsCurve;
+  m_p0          = trajectory.m_p0;
+  m_p1          = trajectory.m_p1;
+  m_bend        = trajectory.m_bend;
+  m_ratio       = trajectory.m_ratio;
+  m_p2          = trajectoryPoint(m_ratio);
+}
+
+// Switching to a frame brings back the alignment kept for it
+bool ShiftTraceTool::followMask() {
+  if (!Preferences::instance()->isShiftAndTraceAlignmentPerFrameEnabled() ||
+      TTool::getApplication()
+              ->getCurrentOnionSkin()
+              ->getOnionSkinMask()
+              .getShiftTraceAlignment() == m_maskAlignment)
+    return false;
+  loadGhosts();
+  return true;
+}
+
+// The original positions are of no use when aligning from the current ones
+void ShiftTraceTool::updateShiftOriginVisibility() {
+  TOnionSkinMaskHandle *osmh = TTool::getApplication()->getCurrentOnionSkin();
+  OnionSkinMask osm          = osmh->getOnionSkinMask();
+  bool forced                = !m_alignFromCurrentPositions.getValue();
+  if (osm.isShiftOriginForcedWhileEditing() == forced) return;
+  osm.setShiftOriginForcedWhileEditing(forced);
+  osmh->setOnionSkinMask(osm);
+  osmh->notifyOnionSkinMaskChanged();
 }
 
 void ShiftTraceTool::reset() {
@@ -307,26 +503,29 @@ void ShiftTraceTool::drawCurve() {
 
     glColor3d(0.2, 0.2, 0.2);
 
-    TPointD center;
-    if (circumCenter(center, m_p0, m_p1, m_p2)) {
-      double radius = norm(center - m_p1);
-      glBegin(GL_LINE_STRIP);
-      int n = 100;
-      for (int i = 0; i < n; i++) {
-        double t  = (double)i / n;
-        TPointD p = (1 - t) * m_p0 + t * m_p2;
-        p         = center + radius * normalize(p - center);
-        tglVertex(p);
-      }
-      for (int i = 0; i < n; i++) {
-        double t  = (double)i / n;
-        TPointD p = (1 - t) * m_p2 + t * m_p1;
-        p         = center + radius * normalize(p - center);
-        tglVertex(p);
-      }
-      glEnd();
-    } else {
-      tglDrawSegment(m_p0, m_p1);
+    Trajectory t = getTrajectory();
+    glBegin(GL_LINE_STRIP);
+    int n = 100;
+    for (int i = 0; i <= n; i++) tglVertex(trajectoryPoint(t, (double)i / n));
+    glEnd();
+    for (int k = 1; k < m_snapDivision; k++)
+      drawDot(trajectoryPoint(t, (double)k / m_snapDivision), r * 0.5,
+              TPixel32(180, 180, 180));
+    if (!m_straightTrajectory.getValue()) {
+      TPointD apex = arcApex();
+      TPointD off  = chordNormal() * bendHandleOffset();
+      glLineStipple(1, 0xAAAA);
+      glEnable(GL_LINE_STIPPLE);
+      tglDrawSegment(apex - off, apex + off);
+      glDisable(GL_LINE_STIPPLE);
+      color = m_highlightedGadget == CurveBendPlusGadget
+                  ? TPixel32(200, 100, 100)
+                  : TPixel32(120, 180, 240);
+      drawDot(apex + off, r * 0.75, color);
+      color = m_highlightedGadget == CurveBendMinusGadget
+                  ? TPixel32(200, 100, 100)
+                  : TPixel32(120, 180, 240);
+      drawDot(apex - off, r * 0.75, color);
     }
     color = m_highlightedGadget == CurvePmGadget ? TPixel32(200, 100, 100)
                                                  : TPixel32::White;
@@ -338,12 +537,12 @@ void ShiftTraceTool::onActivate() {
   m_ghostIndex  = 0;
   m_curveStatus = NoCurve;
   clearData();
-  OnionSkinMask osm =
-      TTool::getApplication()->getCurrentOnionSkin()->getOnionSkinMask();
-  m_aff[0]    = osm.getShiftTraceGhostAff(0);
-  m_aff[1]    = osm.getShiftTraceGhostAff(1);
-  m_center[0] = osm.getShiftTraceGhostCenter(0);
-  m_center[1] = osm.getShiftTraceGhostCenter(1);
+  m_straightTrajectory.setValue(ShiftTraceStraightTrajectory ? 1 : 0);
+  m_rotateAlongArc.setValue(ShiftTraceRotateAlongArc ? 1 : 0);
+  m_alignFromCurrentPositions.setValue(ShiftTraceAlignFromCurrentPositions ? 1
+                                                                           : 0);
+  updateShiftOriginVisibility();
+  loadGhosts();
 }
 
 void ShiftTraceTool::onDeactivate() {
@@ -366,9 +565,22 @@ void ShiftTraceTool::onDeactivate() {
 
 ShiftTraceTool::GadgetId ShiftTraceTool::getGadget(const TPointD &p) {
   std::vector<std::pair<TPointD, GadgetId>> gadgets;
-  gadgets.push_back(std::make_pair(m_p0, CurveP0Gadget));
-  gadgets.push_back(std::make_pair(m_p1, CurveP1Gadget));
-  gadgets.push_back(std::make_pair(m_p2, CurvePmGadget));
+  // p2 comes first so it wins when it overlaps an end point: dragging it
+  // away along the trajectory frees the end point again, the reverse would
+  // leave p2 stuck under it
+  // The points keep their values after the curve is cleared, so they would
+  // be grabbed while invisible
+  if (m_curveStatus != NoCurve) {
+    gadgets.push_back(std::make_pair(m_p2, CurvePmGadget));
+    gadgets.push_back(std::make_pair(m_p0, CurveP0Gadget));
+    gadgets.push_back(std::make_pair(m_p1, CurveP1Gadget));
+  }
+  if (m_curveStatus == ThreePointsCurve && !m_straightTrajectory.getValue()) {
+    TPointD apex = arcApex();
+    TPointD off  = chordNormal() * bendHandleOffset();
+    gadgets.push_back(std::make_pair(apex + off, CurveBendPlusGadget));
+    gadgets.push_back(std::make_pair(apex - off, CurveBendMinusGadget));
+  }
   TAffine aff      = getGhostAff();
   double pixelSize = getPixelSize();
   double d         = 15 * pixelSize;  // offset for rotation handle
@@ -449,6 +661,10 @@ void ShiftTraceTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 }
 
 void ShiftTraceTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
+  if (followMask()) {
+    updateData();
+    m_highlightedGadget = getGadget(pos);
+  }
   m_gadget = m_highlightedGadget;
   m_oldPos = m_startPos = pos;
 
@@ -507,6 +723,9 @@ void ShiftTraceTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
       m_curveStatus = TwoPointsCurve;
       m_p0          = m_oldPos;
       m_gadget      = CurveP1Gadget;
+      for (int i = 0; i < 2; i++)
+        m_baseAff[i] =
+            m_alignFromCurrentPositions.getValue() ? m_aff[i] : TAffine();
     }
   }
 
@@ -515,8 +734,23 @@ void ShiftTraceTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
       m_p0 = pos;
     else if (m_gadget == CurveP1Gadget)
       m_p1 = pos;
-    else
-      m_p2 = pos;
+    else if (m_gadget == CurvePmGadget) {
+      m_ratio = snapRatio(trajectoryRatio(pos));
+      if (m_snapDivision >= 2) {
+        m_snapNumerator = tround(m_ratio * m_snapDivision);
+        updateSnapRatioText();
+      }
+    } else if (m_gadget == CurveBendPlusGadget ||
+               m_gadget == CurveBendMinusGadget) {
+      // Keeps the grabbed handle under the cursor while the apex follows
+      int sign = m_gadget == CurveBendPlusGadget ? 1 : -1;
+      m_bend   = (pos - (m_p0 + m_p1) * 0.5) * chordNormal() -
+               sign * bendHandleOffset();
+      // A hand-dragged bend never lands exactly on zero, so the trajectory
+      // could not be made straight again without the checkbox
+      if (fabs(m_bend) < 5 * getPixelSize()) m_bend = 0;
+    }
+    if (m_curveStatus == ThreePointsCurve) m_p2 = trajectoryPoint(m_ratio);
     updateCurveAffs();
   } else if (m_gadget == RotateGadget) {
     TAffine aff = getGhostAff();
@@ -562,13 +796,13 @@ void ShiftTraceTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
 void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
   if (CurveP0Gadget <= m_gadget && m_gadget <= CurvePmGadget) {
     if (m_curveStatus == TwoPointsCurve) {
-      m_p2          = (m_p0 + m_p1) * 0.5;
+      m_bend        = 0;
+      m_ratio       = snapOrJump(0.5);
+      m_p2          = trajectoryPoint(m_ratio);
       m_curveStatus = ThreePointsCurve;
       updateCurveAffs();
+      updateCurveCenters();
       updateGhost();
-
-      m_center[0] = (m_aff[0] * m_dpiAff).inv() * m_p2;
-      m_center[1] = (m_aff[1] * m_dpiAff).inv() * m_p2;
     }
   }
   m_gadget = NoGadget;
@@ -580,6 +814,7 @@ void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
 }
 
 void ShiftTraceTool::draw() {
+  followMask();
   updateData();
   drawControlRect();
   drawCurve();
@@ -619,6 +854,45 @@ void ShiftTraceTool::setCurrentGhostIndex(int index) {
     if (ToolHandle *toolHandle = app->getCurrentTool())
       toolHandle->notifyToolChanged();
   }
+}
+
+bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {
+  ShiftTraceStraightTrajectory = (int)m_straightTrajectory.getValue();
+  ShiftTraceRotateAlongArc     = (int)m_rotateAlongArc.getValue();
+  ShiftTraceAlignFromCurrentPositions =
+      (int)m_alignFromCurrentPositions.getValue();
+  // Recomputing the trajectory would drop ghosts moved by hand after it
+  if (propertyName == m_alignFromCurrentPositions.getName()) {
+    updateShiftOriginVisibility();
+    return true;
+  }
+
+  bool ratioEntered = propertyName == m_snapRatio.getName();
+  if (ratioEntered) {
+    int oldDivision = m_snapDivision, oldNumerator = m_snapNumerator;
+    parseSnapRatio();
+    // Entering the current ratio again must not reset ghosts adjusted by hand
+    if (m_snapDivision == oldDivision && m_snapNumerator == oldNumerator)
+      return true;
+  }
+
+  // The settings panel stays enabled under the navigation tools. The curve
+  // is discarded on the next activation, so only the settings are kept
+  if (TTool::getApplication()->getCurrentTool()->getTool() != this) return true;
+  // Without a redraw since switching the frame, the previous frame's alignment
+  // would be written back
+  if (followMask()) updateData();
+
+  // Ghosts moved by hand without a trajectory must survive a mode switch
+  if (m_curveStatus == ThreePointsCurve) {
+    m_ratio = ratioEntered ? snapOrJump(m_ratio) : snapRatio(m_ratio);
+    m_p2    = trajectoryPoint(m_ratio);
+    updateCurveAffs();
+    updateCurveCenters();
+    updateGhost();
+  }
+  invalidate();
+  return true;
 }
 
 ShiftTraceTool shiftTraceTool;

@@ -16,6 +16,8 @@
 #endif
 #include "tenv.h"
 #include "cellselection.h"
+#include "floatingpanelcommand.h"
+#include "pane.h"
 
 // TnzTools includes
 #include "tools/cursors.h"
@@ -407,6 +409,26 @@ public:
 
 //=============================================================================
 
+namespace {
+
+void openShiftTraceSettingsPanel() {
+  // getOrOpenFloatingPanel() ignores docked panels and re-centers a floating
+  // one that is already on screen, so a visible instance is handled here
+  if (TMainWindow *room = TApp::instance()->getCurrentRoom()) {
+    for (TPanel *panel : room->findChildren<TPanel *>()) {
+      if (panel->getPanelType() != "ShiftTraceSettings" || panel->isHidden())
+        continue;
+      panel->raise();
+      return;
+    }
+  }
+  OpenFloatingPanel::getOrOpenFloatingPanel("ShiftTraceSettings");
+}
+
+}  // namespace
+
+//=============================================================================
+
 class TShiftTraceToggleCommand final : public MenuItemHandler {
   CommandId m_cmdId;
 
@@ -424,8 +446,10 @@ public:
       if (checked) {
         OnioniSkinMaskGUI::resetShiftTraceFrameOffset();
         // activate edit shift
-        if (isChecked(MI_EditShift))
+        if (isChecked(MI_EditShift)) {
           TApp::instance()->getCurrentTool()->setPseudoTool("T_ShiftTrace");
+          openShiftTraceSettingsPanel();
+        }
       } else {
         // deactivate edit shift
         if (isChecked(MI_EditShift))
@@ -440,6 +464,7 @@ public:
             CommandManager::instance()->getAction(MI_NoShift);
         if (noShiftAction) noShiftAction->setChecked(false);
         TApp::instance()->getCurrentTool()->setPseudoTool("T_ShiftTrace");
+        openShiftTraceSettingsPanel();
       } else {
         TApp::instance()->getCurrentTool()->unsetPseudoTool();
       }
@@ -483,13 +508,13 @@ public:
   void execute() override {
     OnionSkinMask osm =
         TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
-    osm.setShiftTraceGhostCenter(0, TPointD());
-    osm.setShiftTraceGhostCenter(1, TPointD());
-    osm.setShiftTraceGhostAff(0, TAffine());
-    osm.setShiftTraceGhostAff(1, TAffine());
+    osm.resetShiftTraceGhost(0);
+    osm.resetShiftTraceGhost(1);
     TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osm);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     TTool *tool = TApp::instance()->getCurrentTool()->getTool();
+    if (tool) tool->reset();
+    tool = TApp::instance()->getCurrentTool()->getSuspendedTool();
     if (tool) tool->reset();
   }
 } resetShiftTraceCommand;
@@ -1247,6 +1272,7 @@ void SceneViewer::hideEvent(QHideEvent *) {
   if (toolHandle) toolHandle->disconnect(this);
 
   disconnect(app, &TApp::tabletLeft, this, &SceneViewer::resetTabletStatus);
+  resetTabletOffset();
 
 #if defined(x64)
   if (m_stopMotion) {
@@ -1895,6 +1921,23 @@ void SceneViewer::drawOverlay() {
     glDisable(GL_DEPTH_TEST);
     glPopMatrix();
     assert(glGetError() == GL_NO_ERROR);
+  }
+
+  TTool *suspendedTool = app->getCurrentTool()->getSuspendedTool();
+  if (suspendedTool && suspendedTool->isEnabled()) {
+    if (!m_isLocator) suspendedTool->setViewer(this);
+    glPushMatrix();
+    if (m_draw3DMode) {
+      mult3DMatrix();
+      tglMultMatrix(suspendedTool->getMatrix());
+    } else
+      tglMultMatrix(getViewMatrix() * suspendedTool->getMatrix());
+    if (suspendedTool->getToolType() & TTool::LevelTool &&
+        !app->getCurrentObject()->isSpline())
+      glScaled(m_dpiScale.x, m_dpiScale.y, 1);
+    m_pixelSize = sqrt(tglGetPixelSize2()) * getDevPixRatio();
+    suspendedTool->draw();
+    glPopMatrix();
   }
 
   // draw tool gadgets

@@ -126,6 +126,13 @@ double getOnionSkinOpacity(const OnionSkinMask &mask, int row,
 }
 
 //----------------------------------------------------------------
+
+double getShiftAndTraceGhostOpacity() {
+  int opacity = Preferences::instance()->getShiftAndTraceGhostOpacity();
+  return opacity < 0 ? -1.0 : opacity / 100.0;
+}
+
+//----------------------------------------------------------------
 }  // namespace
 
 //=============================================================================
@@ -499,23 +506,31 @@ void StageBuilder::addCell(PlayerSet &players, ToonzScene *scene, TXsheet *xsh,
         if (m_onionSkinMask.getShiftTraceStatus() !=
             OnionSkinMask::ENABLED_WITHOUT_GHOST_MOVEMENTS) {
           if (m_shiftTraceGhostId == FIRST_GHOST) {
-            if (m_editingShift || m_showShiftOrigin) {
-              player.m_opacity = 30;
+            if ((m_editingShift || m_showShiftOrigin) &&
+                !m_onionSkinMask.isShiftOriginHiddenWhileEditing()) {
+              player.m_opacity              = 30;
+              player.m_isShiftAndTraceGhost = true;
               players.push_back(player);
             }
             player.m_opacity           = opacity;
             player.m_onionSkinDistance = -1;
             player.m_placement =
                 m_onionSkinMask.getShiftTraceGhostAff(0) * player.m_placement;
+            player.m_isShiftAndTraceGhost = true;
+            player.m_onionSkinOpacity     = getShiftAndTraceGhostOpacity();
           } else if (m_shiftTraceGhostId == SECOND_GHOST) {
-            if (m_editingShift || m_showShiftOrigin) {
-              player.m_opacity = 30;
+            if ((m_editingShift || m_showShiftOrigin) &&
+                !m_onionSkinMask.isShiftOriginHiddenWhileEditing()) {
+              player.m_opacity              = 30;
+              player.m_isShiftAndTraceGhost = true;
               players.push_back(player);
             }
             player.m_opacity           = opacity;
             player.m_onionSkinDistance = 1;
             player.m_placement =
                 m_onionSkinMask.getShiftTraceGhostAff(1) * player.m_placement;
+            player.m_isShiftAndTraceGhost = true;
+            player.m_onionSkinOpacity     = getShiftAndTraceGhostOpacity();
           }
         }
       }
@@ -792,12 +807,16 @@ void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
     player.m_bingoOrder = 10;
     if (m_onionSkinMask.getShiftTraceStatus() !=
         OnionSkinMask::ENABLED_WITHOUT_GHOST_MOVEMENTS) {
-      player.m_opacity = 30;
-      players.push_back(player);
+      player.m_opacity              = 30;
+      player.m_isShiftAndTraceGhost = true;
+      if (!m_onionSkinMask.isShiftOriginHiddenWhileEditing())
+        players.push_back(player);
       player.m_opacity           = opacity;
       player.m_onionSkinDistance = (ghostIndex == 0) ? -1 : 1;
       player.m_placement = m_onionSkinMask.getShiftTraceGhostAff(ghostIndex) *
                            player.m_placement;
+      player.m_isShiftAndTraceGhost = true;
+      player.m_onionSkinOpacity     = getShiftAndTraceGhostOpacity();
     }
     players.push_back(player);
   };
@@ -993,7 +1012,6 @@ void Stage::visit(Visitor &visitor, const VisitArgs &args) {
   Player::m_firstFrontOnionSkin    = 0;
   Player::m_firstBackOnionSkin     = 0;
   Player::m_lastBackVisibleSkin    = 0;
-  Player::m_isShiftAndTraceEnabled = osm->isShiftTraceEnabled();
   sb.addFrame(sb.m_players, scene, xsh, row, 0, args.m_onlyVisible,
               args.m_checkPreviewVisibility);
   
@@ -1037,7 +1055,6 @@ void Stage::visit(Visitor &visitor, TXshSimpleLevel *level, const TFrameId &fid,
   Player::m_firstFrontOnionSkin    = 0;
   Player::m_firstBackOnionSkin     = 0;
   Player::m_lastBackVisibleSkin    = 0;
-  Player::m_isShiftAndTraceEnabled = osm.isShiftTraceEnabled();
   sb.addSimpleLevelFrame(sb.m_players, level, fid);
   updateOnionSkinSize(sb.m_players);
   sb.visit(sb.m_players, visitor, isPlaying);

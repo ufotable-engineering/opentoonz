@@ -705,6 +705,10 @@
         <translation>透明部分の保護</translation>
     </message>
     <message>
+        <source>Pencil</source>
+        <translation>鉛筆モード</translation>
+    </message>
+    <message>
         <source>&lt;custom&gt;</source>
         <translation>&lt;カスタム&gt;</translation>
     </message>
@@ -738,6 +742,10 @@
     <message>
         <source>Frame Range</source>
         <translation>フレーム範囲</translation>
+    </message>
+    <message>
+        <source>Pencil Mode</source>
+        <translation>鉛筆モード</translation>
     </message>
     <message>
         <source>Normal</source>
@@ -1099,6 +1107,10 @@ Do you want to proceed?</source>
         <translation>多角形</translation>
     </message>
     <message>
+        <source>Spline</source>
+        <translation>スプライン</translation>
+    </message>
+    <message>
         <source>Butt cap</source>
         <translation>バット線端</translation>
     </message>
@@ -1141,6 +1153,14 @@ Do you want to proceed?</source>
     <message>
         <source>Smooth</source>
         <translation>滑らかに連結</translation>
+    </message>
+    <message>
+        <source>Close Line</source>
+        <translation>線を閉じる</translation>
+    </message>
+    <message>
+        <source>Add/Delete Points While Drawing</source>
+        <translation>描画中に制御点を追加・削除</translation>
     </message>
     <message>
         <source>Rotate</source>
@@ -1367,6 +1387,22 @@ Do you want to proceed?</source>
     <message>
         <source>Snap At Intersection</source>
         <translation>交点にスナップ</translation>
+    </message>
+    <message>
+        <source>Straight Trajectory</source>
+        <translation>軌道を直線にする</translation>
+    </message>
+    <message>
+        <source>Rotate Along Arc</source>
+        <translation>回転を追従</translation>
+    </message>
+    <message>
+        <source>Align from Current Positions</source>
+        <translation>表示位置を基準に位置合わせ</translation>
+    </message>
+    <message>
+        <source>Snap Ratio</source>
+        <translation>ツメ指定</translation>
     </message>
     <message>
         <source>Sort Vector Strokes With Palette Order Level : %1 Frame : %2</source>
@@ -1624,6 +1660,89 @@ Do you want to proceed?</source>
     <message>
         <source>Rotate Selection Right</source>
         <translation>選択範囲を90°回転（時計回り）</translation>
+    </message>
+</context>
+<context>
+    <name>ShiftTraceSettingsPane</name>
+    <message>
+        <source>Auto</source>
+        <translation>自動</translation>
+    </message>
+    <message>
+        <source>Follow the Paper Thickness of the onion skin</source>
+        <translation>オニオンスキンの紙厚に合わせます</translation>
+    </message>
+    <message>
+        <source>Original Colors</source>
+        <translation>本来の色</translation>
+    </message>
+    <message>
+        <source>Onion Skin Colors</source>
+        <translation>オニオンスキンの色</translation>
+    </message>
+    <message>
+        <source>Half Color</source>
+        <translation>ハーフカラー</translation>
+    </message>
+    <message>
+        <source>Double-click to edit in the Style Editor. Shared with the onion skin colors</source>
+        <translation>ダブルクリックでスタイルエディタを開いて編集します。オニオンスキンの色と共通です</translation>
+    </message>
+    <message>
+        <source>Previous Drawing</source>
+        <translation>前のコマ</translation>
+    </message>
+    <message>
+        <source>Following Drawing</source>
+        <translation>後のコマ</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>表示</translation>
+    </message>
+    <message>
+        <source>Opacity:</source>
+        <translation>不透明度:</translation>
+    </message>
+    <message>
+        <source>Color:</source>
+        <translation>色:</translation>
+    </message>
+    <message>
+        <source>Color Mode:</source>
+        <translation>表示方法:</translation>
+    </message>
+    <message>
+        <source>Display Lines Only</source>
+        <translation>線のみ表示</translation>
+    </message>
+    <message>
+        <source>Shared with the onion skin. Has no effect when the Color Mode is Original Colors</source>
+        <translation>オニオンスキンと共通です。表示方法が「本来の色」のときは効きません</translation>
+    </message>
+    <message>
+        <source>Selected Drawing</source>
+        <translation>選択中のコマ</translation>
+    </message>
+    <message>
+        <source>Both</source>
+        <translation>両方</translation>
+    </message>
+    <message>
+        <source>Drawing to Move:</source>
+        <translation>動かす絵:</translation>
+    </message>
+    <message>
+        <source>Reset:</source>
+        <translation>リセット:</translation>
+    </message>
+    <message>
+        <source>Keep Alignment for Each Frame</source>
+        <translation>フレームごとに位置合わせを保持</translation>
+    </message>
+    <message>
+        <source>Each frame keeps the positions of the drawings and the trajectory, which come back when returning to the frame or turning Edit Shift on again</source>
+        <translation>コマの位置と軌道をフレームごとに保持し、そのフレームに戻ったときや「オフセット位置を変更」を再度オンにしたときに復元します</translation>
     </message>
 </context>
 <context>

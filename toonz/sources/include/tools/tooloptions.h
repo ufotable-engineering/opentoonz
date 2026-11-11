@@ -75,6 +75,14 @@ class QHBoxLayout;
 class QComboBox;
 class QStackedWidget;
 
+class ShiftTraceTool;
+
+namespace DVGui {
+class IntField;
+class IntLineEdit;
+class ColorField;
+}  // namespace DVGui
+
 //=============================================================================
 
 // Preprocessor definitions
@@ -427,7 +435,8 @@ class GeometricToolOptionsBox final : public ToolOptionsBox {
   ToolOptionCombo *m_shapeField;
   ToolOptionCheckbox *m_pencilMode;
   ToolOptionIntSlider *m_miterField;
-  ToolOptionCheckbox *m_snapCheckbox, *m_smoothCheckbox;
+  ToolOptionCheckbox *m_snapCheckbox, *m_smoothCheckbox, *m_closeLineCheckbox,
+      *m_editPointsCheckbox;
   ToolOptionCombo *m_snapSensitivityCombo;
   TTool *m_tool;
 
@@ -763,6 +772,52 @@ protected slots:
   void onPrevRadioBtnClicked();
   void onAfterRadioBtnClicked();
   void updateColors();
+};
+
+//=============================================================================
+//
+// ShiftTraceSettingsPane
+// contents of the "Shift and Trace Settings" floating panel
+//
+//=============================================================================
+
+class DVAPI ShiftTraceSettingsPane final : public QFrame {
+  Q_OBJECT
+
+  ShiftTraceTool *m_tool;
+  TStringProperty *m_snapRatioProp;
+  QList<QPushButton *> m_snapPresetBtns;
+  QLabel *m_snapNumeratorLabel;
+  DVGui::IntLineEdit *m_snapDenominatorField;
+  bool m_snapDenominatorEdited;
+  QList<ToolOptionControl *> m_controls;
+  QWidget *m_editShiftContents;
+  QPushButton *m_ghostBtns[2];
+  QPushButton *m_resetSelectedBtn, *m_resetBothBtn;
+  DVGui::CheckBox *m_alignmentPerFrameCB;
+
+  DVGui::IntField *m_opacityField;
+  DVGui::CheckBox *m_opacityAutoCB;
+  DVGui::ColorField *m_colorFields[2];
+  QComboBox *m_colorModeCombo;
+  DVGui::CheckBox *m_inksOnlyCB;
+
+  void applySnapRatio(const std::wstring &value);
+
+public:
+  ShiftTraceSettingsPane(QWidget *parent = 0);
+  ~ShiftTraceSettingsPane();
+
+protected:
+  void showEvent(QShowEvent *) override;
+  void hideEvent(QHideEvent *) override;
+
+protected slots:
+  void updateStatus();
+  void onToolSwitched();
+  void onSnapPresetClicked();
+  void onSnapDenominatorEdited();
+  void updateDisplayFields();
 };
 
 //=============================================================================

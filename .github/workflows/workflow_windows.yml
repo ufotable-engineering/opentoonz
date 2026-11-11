@@ -1,13 +1,22 @@
 name: Windows Build
 
+# Releases queue up among themselves so that two cannot pick the same number.
+# They are kept out of the integration group because a group holds only one
+# pending run, and a push arriving later would silently cancel the release.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ inputs.publish && 'publish' || github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.head_ref != '' }}
 
 on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish an in-house release (integration only)'
+        type: boolean
+        default: false
   push:
     branches:
-      - master  # Specify branches where the workflow should run
+      - integration  # Specify branches where the workflow should run
     paths:
       - '**/*'                                    # Include all files in the repository
       - '!appveyor.yml'                           # Ignore changes in AppVeyor
@@ -23,6 +32,9 @@ on:
       - '!doc/**'
       - '!**/.github/**'
       - '.github/workflows/workflow_windows.yml'
+
+permissions:
+  contents: write
 
 jobs:
   Windows:
@@ -43,10 +55,42 @@ jobs:
       OPENCV_VERSION: "4.13.0"              # OpenCV version
       OpenCV_DIR: C:\tools\opencv\build     # Path to OpenCV
 
+      # Qt 5.15 only loads the OpenSSL 1.1 DLL names, and 1.1.1w is the last
+      # public 1.1.1 release
+      OPENSSL_VERSION: "1.1.1w"
+      OPENSSL_SHA256: cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8
+      OPENSSL_DIR: C:\tools\openssl
+
     steps:
       - uses: actions/checkout@v6
         with:
           lfs: false
+
+      # N follows the highest existing release of the month rather than the
+      # count, so a deleted tag is never reused
+      - name: Resolve in-house version
+        id: ver
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if ($env:PUBLISH -eq 'true' -and $env:GITHUB_REF -ne 'refs/heads/integration') {
+            throw 'In-house releases are published only from integration'
+          }
+          if ($env:PUBLISH -eq 'true') {
+            $jst = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date).ToUniversalTime(), 'Tokyo Standard Time')
+            $month = $jst.ToString('yyyy.MM')
+            $max = 0
+            git ls-remote --tags origin "refs/tags/integration-$month.*" | ForEach-Object {
+              if ($_ -match "integration-$([regex]::Escape($month))\.(\d+)$") { $max = [Math]::Max($max, [int]$Matches[1]) }
+            }
+            $v = "$month.$($max + 1)"
+            "artifact=Opentoonz-Windows-$v" >> $env:GITHUB_OUTPUT
+          } else {
+            $v = 'dev'
+            "artifact=Opentoonz-Windows-$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+        shell: pwsh
 
       # Cache OpenCV and Boost libraries
       - name: Cache OpenCV and Boost
@@ -86,12 +130,42 @@ jobs:
           7z x -y thirdparty-libs.zip
         shell: cmd    
 
+      # Qt loads OpenSSL at runtime for HTTPS and windeployqt does not ship it.
+      # Without these DLLs the update check and download fail silently.
+      - name: Cache OpenSSL
+        id: cache-openssl
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.OPENSSL_DIR }}
+          key: ${{ runner.os }}-openssl-${{ env.OPENSSL_VERSION }}-noasm
+
+      # no-asm because the runner has no NASM
+      - name: Build OpenSSL if cache is missing
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        run: |
+          @echo on
+          curl -fsSL -o openssl.tar.gz https://github.com/openssl/openssl/releases/download/OpenSSL_%OPENSSL_VERSION:.=_%/openssl-%OPENSSL_VERSION%.tar.gz || exit /b 1
+          pwsh -NoProfile -Command "if ((Get-FileHash openssl.tar.gz -Algorithm SHA256).Hash -ne $env:OPENSSL_SHA256) { exit 1 }" || exit /b 1
+          tar -xf openssl.tar.gz || exit /b 1
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSDIR=%%i
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cd openssl-%OPENSSL_VERSION%
+          C:\Strawberry\perl\bin\perl.exe Configure VC-WIN64A no-asm no-tests || exit /b 1
+          nmake build_libs || exit /b 1
+          mkdir %OPENSSL_DIR%
+          copy /Y libssl-1_1-x64.dll %OPENSSL_DIR% || exit /b 1
+          copy /Y libcrypto-1_1-x64.dll %OPENSSL_DIR% || exit /b 1
+          copy /Y LICENSE %OPENSSL_DIR%\LICENSE-OpenSSL.txt || exit /b 1
+        shell: cmd
+
       # Add msbuild to PATH for build process
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v3
 
       # CMake configuration step
       - name: CMake configuration
+        env:
+          INHOUSE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           @echo on
           cd thirdparty
@@ -104,7 +178,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DINHOUSE_VERSION="%INHOUSE_VERSION%"
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -134,6 +208,8 @@ jobs:
           
           REM Copy OpenCV DLL (IMPORTANT: Update path/filename when upgrading OpenCV version)
           copy /Y "C:\tools\opencv\build\x64\vc16\bin\opencv_world4130.dll" Opentoonz
+
+          copy /Y %OPENSSL_DIR%\* Opentoonz || exit /b 1
           
           REM Deploy Qt dependencies
           "%QT_PATH%\bin\windeployqt.exe" Opentoonz\Opentoonz.exe --opengl
@@ -141,6 +217,8 @@ jobs:
           del /Q Opentoonz\*.pdb  REM Remove .pdb files
           del /Q Opentoonz\vc_redist.x64.exe REM Remove vc_redist.x64.exe file
           
+          copy /Y ..\sources\toonz\inhouse_update.ps1 Opentoonz
+
           REM Create portablestuff directory and copy stuff folder
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
@@ -151,11 +229,33 @@ jobs:
         run: |
           mkdir artifact
           xcopy toonz\build\Opentoonz artifact\ /E /H /Y
+          copy /Y toonz\build\toonz\inhouse_version.txt artifact\
         shell: cmd
 
       # Upload the generated artifact
       - name: Upload Artifact
+        if: steps.ver.outputs.version == 'dev'
         uses: actions/upload-artifact@v6
         with:
-          name: Opentoonz-${{ runner.os }}-${{ github.sha }}
+          name: ${{ steps.ver.outputs.artifact }}
           path: artifact
+
+      - name: Publish Release
+        if: steps.ver.outputs.version != 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INHOUSE_VERSION: ${{ steps.ver.outputs.version }}
+          ARTIFACT: ${{ steps.ver.outputs.artifact }}
+        run: |
+          # Leaves no entry name to be decoded with the code page of the extracting PC
+          7z a -tzip -mcu=on "$env:ARTIFACT.zip" .\artifact\*
+          # Checked by the in-house updater before it keeps the downloaded zip
+          (Get-FileHash "$env:ARTIFACT.zip" -Algorithm SHA256).Hash.ToLower() |
+            Set-Content -NoNewline "$env:ARTIFACT.zip.sha256"
+          gh release create "integration-$env:INHOUSE_VERSION" `
+            --target $env:GITHUB_SHA `
+            --title "integration $env:INHOUSE_VERSION" `
+            --notes "Built from $env:GITHUB_SHA" `
+            --generate-notes `
+            "$env:ARTIFACT.zip" "$env:ARTIFACT.zip.sha256" artifact\inhouse_version.txt
+        shell: pwsh

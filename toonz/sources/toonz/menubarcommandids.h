@@ -346,6 +346,7 @@
 #define MI_RemoveBrushPreset "MI_RemoveBrushPreset"
 #define MI_RemoveBrushPresetByName "MI_RemoveBrushPresetByName"
 #define MI_OpenToolPropertiesPanel "MI_OpenToolPropertiesPanel"
+#define MI_OpenShiftTraceSettings "MI_OpenShiftTraceSettings"
 #define MI_ReplaceParentDirectory "MI_ReplaceParentDirectory"
 #define MI_Reframe1 "MI_Reframe1"
 #define MI_Reframe2 "MI_Reframe2"
@@ -387,6 +388,7 @@
 #define MI_GeometricArc "MI_GeometricArc"
 #define MI_GeometricMultiArc "MI_GeometricMultiArc"
 #define MI_GeometricPolygon "MI_GeometricPolygon"
+#define MI_GeometricSpline "MI_GeometricSpline"
 
 #define MI_TypeNextStyle "MI_TypeNextStyle"
 #define MI_TypeOblique "MI_TypeOblique"

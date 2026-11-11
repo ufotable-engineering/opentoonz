@@ -7483,6 +7483,10 @@ or you may delete necessary files for it.</source>
         <translation>図形ツール - 形状 - 多角形</translation>
     </message>
     <message>
+        <source>Geometric Shape Spline</source>
+        <translation>図形ツール - 形状 - スプライン</translation>
+    </message>
+    <message>
         <source>Mode - Lines &amp;&amp; Areas</source>
         <translation>共通 - モード - 線と塗り</translation>
     </message>
@@ -7609,6 +7613,10 @@ or you may delete necessary files for it.</source>
     <message>
         <source>Geometric Tool - Polygon</source>
         <translation>図形ツール（切り替え） - 形状 - 多角形</translation>
+    </message>
+    <message>
+        <source>Geometric Tool - Spline</source>
+        <translation>図形ツール（切り替え） - 形状 - スプライン</translation>
     </message>
     <message>
         <source>Type Tool - Next Style</source>
@@ -8021,6 +8029,10 @@ or you may delete necessary files for it.</source>
     <message>
         <source>&amp;Tool Properties</source>
         <translation>ツールオプション（パネル）(&amp;T)</translation>
+    </message>
+    <message>
+        <source>&amp;Shift and Trace Settings</source>
+        <translation>シフト＆トレース設定 (&amp;S)</translation>
     </message>
     <message>
         <source>Zoom View</source>
@@ -10512,8 +10524,28 @@ Also the initial output destination for new scenes will be set to $scenefolder a
         <translation>保存</translation>
     </message>
     <message>
-        <source>Use Onion Skin Colors for Reference Drawings of Shift and Trace</source>
-        <translation>ライトテーブルの前後フレームにもオニオンスキンの色を用いる</translation>
+        <source>Color Mode for Reference Drawings of Shift and Trace:</source>
+        <translation>ライトテーブルの前後フレームの表示方法：</translation>
+    </message>
+    <message>
+        <source>Keep Shift and Trace Alignment for Each Frame</source>
+        <translation>ライトテーブルの位置合わせをフレームごとに保持</translation>
+    </message>
+    <message>
+        <source>Apply Onion Skin Opacity to Check Colors</source>
+        <translation>チェック表示の色にもオニオンスキンの不透明度を適用する</translation>
+    </message>
+    <message>
+        <source>Original Colors</source>
+        <translation>本来の色</translation>
+    </message>
+    <message>
+        <source>Onion Skin Colors</source>
+        <translation>オニオンスキンの色</translation>
+    </message>
+    <message>
+        <source>Half Color</source>
+        <translation>ハーフカラー</translation>
     </message>
     <message>
         <source>Tablet Settings</source>
@@ -10648,6 +10680,10 @@ in non alpha-enabled image format.</source>
     <message>
         <source>Switch Tool Temporarily Keypress Length (ms):</source>
         <translation>ツールの一時切り替えに必要なショートカットキーの押下時間（ms）:</translation>
+    </message>
+    <message>
+        <source>Keep Tool Editing State during Pan, Zoom and Rotate View</source>
+        <translation>手のひら・ズーム・回転（押下時）の間もツールの編集状態を保持する</translation>
     </message>
     <message>
         <source>[Experimental Feature] </source>
@@ -11114,6 +11150,10 @@ Administrator privileges are required; you may need to restart Explorer for chan
     <message>
         <source>Install</source>
         <translation>インストールする</translation>
+    </message>
+    <message>
+        <source>Align Tablet Strokes to the Cursor</source>
+        <translation>タブレットのストロークをカーソル位置に合わせる</translation>
     </message>
 </context>
 <context>
@@ -14256,6 +14296,10 @@ OpenToonzが連番を正しく認識するためには、レベル名と動画�
     <message>
         <source>Tool Properties</source>
         <translation>ツールオプション（パネル）</translation>
+    </message>
+    <message>
+        <source>Shift and Trace Settings</source>
+        <translation>シフト＆トレース設定</translation>
     </message>
     <message>
         <source>The specified name is already assigned to the folder.</source>

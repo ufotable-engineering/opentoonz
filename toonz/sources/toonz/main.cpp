@@ -11,6 +11,8 @@
 #include "filebrowsermodel.h"
 #include "expressionreferencemanager.h"
 #include "thirdparty.h"
+#include "inhouseupdate.h"
+#include "inhouseversion.h"
 
 // TnzTools includes
 #include "tools/tool.h"
@@ -505,6 +507,7 @@ int main(int argc, char *argv[]) {
 
   // Toonz environment
   initToonzEnv(argumentPathValues);
+  InhouseVersion::applyToEnv();
 
   // Read the saved preference only after the Toonz environment is initialized.
   // Preserve existing platform defaults when enabled; disabling also prevents
@@ -639,6 +642,8 @@ int main(int argc, char *argv[]) {
   // Force to have left-to-right layout direction in any language environment.
   // This function has to be called after installTranslator().
   a.setLayoutDirection(Qt::LeftToRight);
+
+  if (!isRunScript && InhouseUpdate::applyPendingUpdate(&splash)) return 0;
 
   splash.showMessage(offsetStr + "Loading styles ...", Qt::AlignCenter,
                      Qt::white);

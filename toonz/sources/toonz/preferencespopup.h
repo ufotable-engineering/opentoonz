@@ -155,6 +155,7 @@ private:
   // Onion Skin
   void onOnionSkinVisibilityChanged();
   void onOnionColorChanged();
+  void onShiftAndTraceSettingChanged();
   // Colors
   void onTranspCheckDataChanged();
   void onChessboardChanged();
@@ -171,6 +172,7 @@ private slots:
 
   void onAutoSaveExternallyChanged();
   void onAutoSavePeriodExternallyChanged();
+  void onOnionSkinExternallyChanged();
   void onProjectRootChanged();
 
   void onEditAdditionalStyleSheet();

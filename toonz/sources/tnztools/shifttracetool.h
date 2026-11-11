@@ -1,9 +1,15 @@
 #pragma once
 
 #include "tools/tool.h"
+#include "tproperty.h"
+#include "toonz/onionskinmask.h"
 
 class DVAPI ShiftTraceTool final : public TTool {
 public:
+  // Every division draws a dot on the trajectory each frame, so an unbounded
+  // denominator would stall the viewer
+  static constexpr int kMaxSnapDivision = 64;
+
   enum CurveStatus {
     NoCurve,
     TwoPointsCurve,  // just during the first click&drag
@@ -16,16 +22,24 @@ public:
     CurveP0Gadget,
     CurveP1Gadget,
     CurvePmGadget,
+    CurveBendPlusGadget,
+    CurveBendMinusGadget,
     MoveCenterGadget,
     RotateGadget,
     TranslateGadget,
     ScaleGadget
   };
   inline bool isCurveGadget(GadgetId id) const {
-    return CurveP0Gadget <= id && id <= CurvePmGadget;
+    return CurveP0Gadget <= id && id <= CurveBendMinusGadget;
   }
 
 private:
+  struct Trajectory {
+    bool isArc;
+    TPointD center;
+    double radius, angle0, sweep;
+  };
+
   TPointD m_oldPos, m_startPos;
   int m_ghostIndex;
   TPointD m_p0, m_p1, m_p2;
@@ -38,9 +52,35 @@ private:
   TAffine m_dpiAff;
   int m_row[2];
   TAffine m_aff[2];
+  TAffine m_baseAff[2];
   TPointD m_center[2];
 
   TAffine m_oldAff;
+  // The mask's alignment when the ghosts above were last read or written
+  OnionSkinMask::ShiftTraceAlignment m_maskAlignment;
+
+  TPropertyGroup m_prop;
+  TBoolProperty m_straightTrajectory;
+  TBoolProperty m_rotateAlongArc;
+  TBoolProperty m_alignFromCurrentPositions;
+  TStringProperty m_snapRatio;
+  int m_snapDivision, m_snapNumerator;
+  // Trajectory shape: signed distance of the arc apex from the p0-p1 chord
+  double m_bend;
+  // Position of p2 along the trajectory (0 = p0, 1 = p1)
+  double m_ratio;
+
+  TPointD chordNormal() const;
+  TPointD arcApex() const;
+  double bendHandleOffset() const;
+  Trajectory getTrajectory() const;
+  TPointD trajectoryPoint(const Trajectory &t, double ratio) const;
+  TPointD trajectoryPoint(double ratio) const;
+  double trajectoryRatio(const TPointD &pos) const;
+  double snapRatio(double ratio) const;
+  double snapOrJump(double ratio) const;
+  void parseSnapRatio();
+  void updateSnapRatioText();
 
 public:
   ShiftTraceTool();
@@ -51,7 +91,11 @@ public:
   void updateData();
   void updateBox();
   void updateCurveAffs();
+  void updateCurveCenters();
   void updateGhost();
+  void loadGhosts();
+  bool followMask();
+  void updateShiftOriginVisibility();
 
   void reset() override;
 
@@ -77,6 +121,12 @@ public:
 
   int getCursorId() const override;
 
+  TPropertyGroup *getProperties(int targetType) override { return &m_prop; }
+  bool onPropertyChanged(std::string propertyName) override;
+  void updateTranslation() override;
+
   int getCurrentGhostIndex() { return m_ghostIndex; }
+  int getSnapNumerator() const { return m_snapNumerator; }
+  int getSnapDivision() const { return m_snapDivision; }
   void setCurrentGhostIndex(int index);
 };

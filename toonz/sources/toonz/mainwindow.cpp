@@ -5,6 +5,8 @@
 #include "customhelplink.h"
 
 // Tnz6 includes
+#include "inhouseupdate.h"
+#include "inhouseversion.h"
 #include "menubar.h"
 #include "menubarcommandids.h"
 #include "xsheetviewer.h"
@@ -1785,6 +1787,7 @@ void MainWindow::checkForUpdates() {
   // Since there is only a single version of Opentoonz, we can do a simple check
   // against a string
   QString updateUrl("http://opentoonz.github.io/opentoonz-version.txt");
+  if (InhouseVersion::isEnabled()) updateUrl = InhouseVersion::versionFileUrl();
 
   m_updateChecker = new UpdateChecker(updateUrl);
   connect(m_updateChecker, SIGNAL(done(bool)), this,
@@ -1798,13 +1801,28 @@ void MainWindow::onUpdateCheckerDone(bool error) {
     return;
   }
 
-  int const software_version =
-      get_version_code_from(TEnv::getApplicationVersion());
-  int const latest_version =
-      get_version_code_from(m_updateChecker->getLatestVersion().toStdString());
-  if (software_version < latest_version) {
+  bool outdated;
+  if (InhouseVersion::isEnabled())
+    outdated = InhouseVersion::isNewer(m_updateChecker->getLatestVersion());
+  else {
+    int const software_version =
+        get_version_code_from(TEnv::getApplicationVersion());
+    int const latest_version = get_version_code_from(
+        m_updateChecker->getLatestVersion().toStdString());
+    outdated = software_version < latest_version;
+  }
+  QString latest = m_updateChecker->getLatestVersion();
+  bool canUpdate = InhouseUpdate::isAvailable();
+  // A downloaded update was already offered, and declined, at startup
+  if (outdated && !(canUpdate && InhouseUpdate::isDownloaded(latest))) {
     QStringList buttons;
+    int updateButton = -1;
+    if (canUpdate) {
+      buttons.push_back(QObject::tr("Update on Next Launch"));
+      updateButton = buttons.size();
+    }
     buttons.push_back(QObject::tr("Visit Web Site"));
+    int webButton = buttons.size();
     buttons.push_back(QObject::tr("Cancel"));
     DVGui::MessageAndCheckboxDialog *dialog = DVGui::createMsgandCheckbox(
         DVGui::INFORMATION,
@@ -1816,9 +1834,14 @@ void MainWindow::onUpdateCheckerDone(bool error) {
     if (dialog->getChecked() == Qt::Unchecked)
       Preferences::instance()->setValue(latestVersionCheckEnabled, false);
     dialog->deleteLater();
-    if (ret == 1) {
+    if (ret == updateButton)
+      InhouseUpdate::download(latest);
+    else if (ret == webButton) {
       // Write the new last date to file
-      QDesktopServices::openUrl(QObject::tr("https://opentoonz.github.io/e/"));
+      QString siteUrl = QObject::tr("https://opentoonz.github.io/e/");
+      if (InhouseVersion::isEnabled())
+        siteUrl = InhouseVersion::releasePageUrl();
+      QDesktopServices::openUrl(siteUrl);
     }
   }
 
@@ -2845,6 +2868,10 @@ void MainWindow::defineActions() {
   setCommandToWIP(brushPresetAct);
   setCommandToWIP(ToolPropertiesAct);
 
+  createMenuWindowsAction(MI_OpenShiftTraceSettings,
+                          QT_TR_NOOP("&Shift and Trace Settings"), "",
+                          "shift_and_trace_edit");
+
   createMenuWindowsAction(MI_AudioRecording, QT_TR_NOOP("Record Audio"),
                           "Alt+A", "recordaudio");
   createMenuWindowsAction(MI_ResetRoomLayout,
@@ -3173,6 +3200,8 @@ void MainWindow::defineActions() {
                "", ToolCommandType, "geometric_multiarc");
   createAction(MI_GeometricPolygon, QT_TR_NOOP("Geometric Tool - Polygon"), "",
                ToolCommandType, "geometric_polygon");
+  createAction(MI_GeometricSpline, QT_TR_NOOP("Geometric Tool - Spline"), "",
+               ToolCommandType, "geometric_spline");
 
   /*-- Type tool + style switching shortcuts --*/
   createAction(MI_TypeNextStyle, QT_TR_NOOP("Type Tool - Next Style"), "",
@@ -3435,6 +3464,8 @@ void MainWindow::defineActions() {
                           QT_TR_NOOP("Geometric Shape MultiArc"), "");
   createToolOptionsAction("A_ToolOption_GeometricShape:Polygon",
                           QT_TR_NOOP("Geometric Shape Polygon"), "");
+  createToolOptionsAction("A_ToolOption_GeometricShape:Spline",
+                          QT_TR_NOOP("Geometric Shape Spline"), "");
   createToolOptionsAction("A_ToolOption_GeometricEdge",
                           QT_TR_NOOP("Geometric Edge"), "");
   createToolOptionsAction("A_ToolOption_AssistantType",

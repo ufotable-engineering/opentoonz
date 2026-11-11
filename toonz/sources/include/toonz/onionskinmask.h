@@ -45,6 +45,39 @@ public:
     ENABLED_WITHOUT_GHOST_MOVEMENTS
   };
 
+  //! The Ctrl+drag trajectory of the Shift & Trace tool
+  struct ShiftTraceTrajectory {
+    bool m_isValid = false;
+    TPointD m_p0, m_p1;
+    double m_bend = 0, m_ratio = 0.5;
+    TAffine m_baseAff[2];
+
+    bool operator==(const ShiftTraceTrajectory &t) const {
+      return m_isValid == t.m_isValid && m_p0 == t.m_p0 && m_p1 == t.m_p1 &&
+             m_bend == t.m_bend && m_ratio == t.m_ratio &&
+             m_baseAff[0] == t.m_baseAff[0] && m_baseAff[1] == t.m_baseAff[1];
+    }
+  };
+
+  struct ShiftTraceAlignment {
+    TAffine m_ghostAff[2];
+    TPointD m_ghostCenter[2];
+    int m_ghostFrame[2] = {0, 0};  // relative frame position of the ghosts
+    ShiftTraceTrajectory m_trajectory;
+
+    bool operator==(const ShiftTraceAlignment &a) const {
+      for (int i = 0; i < 2; i++)
+        if (m_ghostAff[i] != a.m_ghostAff[i] ||
+            m_ghostCenter[i] != a.m_ghostCenter[i] ||
+            m_ghostFrame[i] != a.m_ghostFrame[i])
+          return false;
+      return m_trajectory == a.m_trajectory;
+    }
+    bool operator!=(const ShiftTraceAlignment &a) const {
+      return !operator==(a);
+    }
+  };
+
 public:
   OnionSkinMask() : m_enabled(false), m_wholeScene(false) {}
 
@@ -115,25 +148,49 @@ since underlying onion-skinned drawings must be visible.
   void setShowShiftOrigin(bool showShiftOrigin) {
     m_showShiftOrigin = showShiftOrigin;
   }
+  bool isShiftOriginForcedWhileEditing() const {
+    return m_shiftOriginForcedWhileEditing;
+  }
+  void setShiftOriginForcedWhileEditing(bool forced) {
+    m_shiftOriginForcedWhileEditing = forced;
+  }
   bool isShiftTraceEnabled() const { return m_shiftTraceStatus != DISABLED; }
   bool isEditingShift() const { return m_shiftTraceStatus == EDITING_GHOST; }
+  bool isShiftOriginHiddenWhileEditing() const {
+    return isEditingShift() && !m_shiftOriginForcedWhileEditing &&
+           !m_showShiftOrigin;
+  }
 
   const TAffine getShiftTraceGhostAff(int index) const {
-    return m_ghostAff[index];
+    return m_shiftTrace.m_ghostAff[index];
   }
   void setShiftTraceGhostAff(int index, const TAffine &aff);
 
   const TPointD getShiftTraceGhostCenter(int index) const {
-    return m_ghostCenter[index];
+    return m_shiftTrace.m_ghostCenter[index];
   }
   void setShiftTraceGhostCenter(int index, const TPointD &center);
 
   const int getShiftTraceGhostFrameOffset(int index) {
-    return m_ghostFrame[index];
+    return m_shiftTrace.m_ghostFrame[index];
   }
   void setShiftTraceGhostFrameOffset(int index, int offset) {
-    m_ghostFrame[index] = offset;
+    m_shiftTrace.m_ghostFrame[index] = offset;
   }
+
+  void setShiftTraceTrajectory(const ShiftTraceTrajectory &trajectory) {
+    m_shiftTrace.m_trajectory = trajectory;
+  }
+
+  const ShiftTraceAlignment &getShiftTraceAlignment() const {
+    return m_shiftTrace;
+  }
+  void setShiftTraceAlignment(const ShiftTraceAlignment &alignment) {
+    m_shiftTrace = alignment;
+  }
+
+  //! Also clears the trajectory, which no longer leads to the ghost.
+  void resetShiftTraceGhost(int index);
 
   const int getGhostFlipKey() {
     return (m_ghostFlipKeys.isEmpty()) ? 0 : m_ghostFlipKeys.last();
@@ -159,9 +216,8 @@ private:
 
   ShiftTraceStatus m_shiftTraceStatus;
   bool m_showShiftOrigin;
-  TAffine m_ghostAff[2];
-  TPointD m_ghostCenter[2];
-  int m_ghostFrame[2];         // relative frame position of the ghosts
+  bool m_shiftOriginForcedWhileEditing = true;
+  ShiftTraceAlignment m_shiftTrace;
   QList<int> m_ghostFlipKeys;  // If F1, F2 or F3 key is pressed, then only
                                // display the corresponding ghost
 };

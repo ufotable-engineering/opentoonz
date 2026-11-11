@@ -53,38 +53,11 @@ void rasterizeWholeStroke(TOfflineGL *&gl, TStroke *stroke, TPalette *palette,
   glEnable(GL_ALPHA_TEST);
   glAlphaFunc(GL_GREATER, 0);
 
-  TPaletteP plt      = palette->clone();
-  int styleId        = stroke->getStyle();
-  TColorStyleP style = plt->getStyle(styleId);
+  TPaletteP plt = palette->clone();
   TTranslation affine(-convert(rect.getP00()));
   TVectorRenderData rd(affine, gl->getBounds(), plt.getPointer(), 0, true,
-                       true);
-  if (doAnialias)
-    tglDraw(rd, stroke);
-  else {
-    TStrokeProp *prop = stroke->getProp();
-    if (prop) prop->getMutex()->lock();
-
-    if (!style->isStrokeStyle() || style->isEnabled() == false) {
-      if (prop) prop->getMutex()->unlock();
-
-      prop = 0;
-    } else {
-      if (!prop || style.getPointer() != prop->getColorStyle()) {
-        if (prop) prop->getMutex()->unlock();
-
-        stroke->setProp(style->makeStrokeProp(stroke));
-        prop = stroke->getProp();
-        if (prop) prop->getMutex()->lock();
-      }
-    }
-
-    if (!prop) return;
-    prop->getMutex()->lock();
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
-    prop->draw(rd);
-    glPopAttrib();
-  }
+                       doAnialias);
+  tglDraw(rd, stroke);
   glDisable(GL_ALPHA_TEST);
   glFinish();
   gl->doneCurrent();
@@ -100,18 +73,38 @@ TRect fastAddInkStroke(const TRasterImageP &ri, TStroke *stroke, TRectD clip,
   TRect rectRender = sBBox * ri->getRaster()->getBounds();
 
   if (!rectRender.isEmpty()) {
-    if (opacity < 1.0) {
+    int pencilAlpha = 0;
+    if (!doAntialiasing) {
+      TPaletteP plt      = ri->getPalette()->clone();
+      TColorStyle *style = plt->getStyle(stroke->getStyle());
+      TPixel32 color     = style->getMainColor();
+      pencilAlpha        = tround(color.m * opacity);
+      color.m            = 255;
+      style->setMainColor(color);
+      rasterizeWholeStroke(gl, stroke, plt.getPointer(), false);
+    } else if (opacity < 1.0) {
       int styleId    = stroke->getStyle();
       TPalette *plt  = ri->getPalette();
       TPixel32 color = plt->getStyle(styleId)->getMainColor();
       color.m        = 255 * opacity;
       TPaletteP newPlt(plt);
       newPlt->getStyle(styleId)->setMainColor(color);
-      rasterizeWholeStroke(gl, stroke, newPlt.getPointer(), doAntialiasing);
+      rasterizeWholeStroke(gl, stroke, newPlt.getPointer(), true);
     } else
-      rasterizeWholeStroke(gl, stroke, ri->getPalette(), doAntialiasing);
+      rasterizeWholeStroke(gl, stroke, ri->getPalette(), true);
     TRect tmp        = rectRender - sBBox.getP00();
     TRaster32P glRas = gl->getRaster()->extract(tmp);
+    if (!doAntialiasing) {
+      // Like the Toonz Raster pencil, keep only the fully covered pixels.
+      int k = pencilAlpha;
+      for (int y = 0; y < glRas->getLy(); ++y) {
+        TPixel32 *pix = glRas->pixels(y), *endPix = pix + glRas->getLx();
+        for (; pix != endPix; ++pix)
+          *pix = pix->m < 255 ? TPixel32::Transparent
+                              : TPixel32(pix->r * k / 255, pix->g * k / 255,
+                                         pix->b * k / 255, k);
+      }
+    }
     TRop::over(ri->getRaster(), glRas, rectRender.getP00());
     delete gl;
   }

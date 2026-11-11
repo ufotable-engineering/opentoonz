@@ -26,6 +26,6 @@ continuita' dello stroke percio' il vettore "points" dovra' gia' contenerli.
 
 DVAPI void rasterBrush(const TRasterCM32P &raster,
                        const std::vector<TThickPoint> &points, int styleId,
-                       bool doAntialias);
+                       bool doAntialias, bool subPixel = false);
 
 #endif

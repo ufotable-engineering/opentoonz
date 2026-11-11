@@ -223,6 +223,8 @@ class DVAPI DoubleField : public DoubleValueField {
 public:
   DoubleField(QWidget *parent = 0, bool isRollerHide = true, int decimals = 2);
   ~DoubleField() {}
+
+  void setDecimals(int decimals);
 };
 
 //=============================================================================

@@ -72,6 +72,30 @@ inline TPixel32 applyColorScaleCMapped(const TPixel32 &color,
 }
 
 //------------------------------------------------------------------------------
+// Averages in straight color so that antialiased edges keep the same hue.
+
+inline TPixel32 applyHalfColor(const TPixel32 &color,
+                               const TPixel32 &colorScale,
+                               bool toBePremultiplied = false) {
+  int m = color.m * colorScale.m / 255;
+  if (toBePremultiplied)
+    return TPixel32((color.r + colorScale.r) / 2, (color.g + colorScale.g) / 2,
+                    (color.b + colorScale.b) / 2, m);
+  const int den = 2 * 255 * 255;
+  return TPixel32((color.r * 255 + colorScale.r * color.m) * colorScale.m / den,
+                  (color.g * 255 + colorScale.g * color.m) * colorScale.m / den,
+                  (color.b * 255 + colorScale.b * color.m) * colorScale.m / den,
+                  m);
+}
+
+//------------------------------------------------------------------------------
+
+inline TPixel32 applyHalfColorCMapped(const TPixel32 &color,
+                                      const TPixel32 &colorScale) {
+  return premultiply(applyHalfColor(color, colorScale, true));
+}
+
+//------------------------------------------------------------------------------
 
 void doQuickPutFilter(const TRaster32P &dn, const TRaster32P &up,
                       const TAffine &aff) {
@@ -331,7 +355,7 @@ void doQuickPutFilter(const TRaster32P &dn, const TRaster32P &up,
 void doQuickPutNoFilter(const TRaster32P &dn, const TRaster32P &up,
                         const TAffine &aff, const TPixel32 &colorScale,
                         bool doPremultiply, bool whiteTransp, bool firstColumn,
-                        bool doRasterDarkenBlendedView) {
+                        bool doRasterDarkenBlendedView, bool halfColor) {
   // if aff := TAffine(sx, 0, tx, 0, sy, ty) is degenerate, the inverse image
   // of up is a segment (or a point)
   if ((aff.a11 * aff.a22 - aff.a12 * aff.a21) == 0) return;
@@ -538,7 +562,13 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRaster32P &up,
       if (firstColumn) upPix.m = 255;
       if (upPix.m == 0 || (whiteTransp && upPix == TPixel::White)) continue;
 
-      if (colorScale != TPixel32::Black)
+      if (halfColor) {
+        upPix = applyHalfColor(upPix, colorScale, doPremultiply);
+        // Unlike quickOverPixPremult, the darken blend takes premultiplied
+        // pixels.
+        if (doPremultiply && doRasterDarkenBlendedView)
+          upPix = premultiply(upPix);
+      } else if (colorScale != TPixel32::Black)
         upPix = applyColorScale(upPix, colorScale, doPremultiply);
 
       if (doRasterDarkenBlendedView)
@@ -780,7 +810,8 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRaster64P &up,
 }
 //=============================================================================
 void doQuickPutNoFilter(const TRaster32P &dn, const TRasterGR8P &up,
-                        const TAffine &aff, const TPixel32 &colorScale) {
+                        const TAffine &aff, const TPixel32 &colorScale,
+                        bool halfColor) {
   if ((aff.a11 * aff.a22 - aff.a12 * aff.a21) == 0) return;
   const int PADN = 16;
   assert(std::max(up->getLx(), up->getLy()) <
@@ -899,7 +930,7 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRasterGR8P &up,
              (yI <= up->getLy() - 1));
 
       TPixelGR8 *upPix = upBasePix + (yI * upWrap + xI);
-      if (colorScale == TPixel32::Black) {
+      if (colorScale == TPixel32::Black && !halfColor) {
         if (upPix->value == 0)
           dnPix->r = dnPix->g = dnPix->b = 0;
         else if (upPix->value == 255)
@@ -909,7 +940,8 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRasterGR8P &up,
         dnPix->m = 255;
       } else {
         TPixel32 upPix32(upPix->value, upPix->value, upPix->value, 255);
-        upPix32 = applyColorScale(upPix32, colorScale);
+        upPix32 = halfColor ? applyHalfColor(upPix32, colorScale)
+                            : applyColorScale(upPix32, colorScale);
 
         if (upPix32.m == 255)
           *dnPix = upPix32;
@@ -2078,7 +2110,7 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRaster32P &up, double sx,
                         double sy, double tx, double ty,
                         const TPixel32 &colorScale, bool doPremultiply,
                         bool whiteTransp, bool firstColumn,
-                        bool doRasterDarkenBlendedView) {
+                        bool doRasterDarkenBlendedView, bool halfColor) {
   // if aff := TAffine(sx, 0, tx, 0, sy, ty) is degenerate, the inverse image
   // of up is a segment (or a point)
   if ((sx == 0) || (sy == 0)) return;
@@ -2289,7 +2321,13 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRaster32P &up, double sx,
 
       if (upPix.m == 0 || (whiteTransp && upPix == TPixel::White)) continue;
 
-      if (colorScale != TPixel32::Black)
+      if (halfColor) {
+        upPix = applyHalfColor(upPix, colorScale, doPremultiply);
+        // Unlike quickOverPixPremult, the darken blend takes premultiplied
+        // pixels.
+        if (doPremultiply && doRasterDarkenBlendedView)
+          upPix = premultiply(upPix);
+      } else if (colorScale != TPixel32::Black)
         upPix = applyColorScale(upPix, colorScale, doPremultiply);
 
       if (doRasterDarkenBlendedView)
@@ -2311,7 +2349,7 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRaster32P &up, double sx,
 //=============================================================================
 void doQuickPutNoFilter(const TRaster32P &dn, const TRasterGR8P &up, double sx,
                         double sy, double tx, double ty,
-                        const TPixel32 &colorScale) {
+                        const TPixel32 &colorScale, bool halfColor) {
   if ((sx == 0) || (sy == 0)) return;
 
   const int PADN = 16;
@@ -2418,12 +2456,13 @@ void doQuickPutNoFilter(const TRaster32P &dn, const TRasterGR8P &up, double sx,
              (yI <= up->getLy() - 1));
 
       TPixelGR8 *upPix = upBasePix + (yI * upWrap + xI);
-      if (colorScale == TPixel32::Black) {
+      if (colorScale == TPixel32::Black && !halfColor) {
         dnPix->r = dnPix->g = dnPix->b = upPix->value;
         dnPix->m                       = 255;
       } else {
         TPixel32 upPix32(upPix->value, upPix->value, upPix->value, 255);
-        upPix32 = applyColorScale(upPix32, colorScale);
+        upPix32 = halfColor ? applyHalfColor(upPix32, colorScale)
+                            : applyColorScale(upPix32, colorScale);
 
         if (upPix32.m == 255)
           *dnPix = upPix32;
@@ -3740,7 +3779,8 @@ void doQuickResampleNoFilter(const TRasterPT<PIX> &dn, const TRasterPT<PIX> &up,
 
 void doQuickPutCmapped(const TRaster32P &dn, const TRasterCM32P &up,
                        const TPaletteP &palette, const TAffine &aff,
-                       const TPixel32 &globalColorScale, bool inksOnly) {
+                       const TPixel32 &globalColorScale, bool inksOnly,
+                       bool halfColor) {
   // if aff := TAffine(sx, 0, tx, 0, sy, ty) is degenerate, the inverse image
   // of up is a segment (or a point)
   if ((aff.a11 * aff.a22 - aff.a12 * aff.a21) == 0) return;
@@ -3803,7 +3843,11 @@ void doQuickPutCmapped(const TRaster32P &dn, const TRasterCM32P &up,
   std::vector<TPixel32> colors(palette->getStyleCount());
   // std::vector<TPixel32> inks(palette->getStyleCount());
 
-  if (globalColorScale != TPixel::Black)
+  if (halfColor)
+    for (int i = 0; i < palette->getStyleCount(); i++)
+      colors[i] = applyHalfColorCMapped(palette->getStyle(i)->getAverageColor(),
+                                        globalColorScale);
+  else if (globalColorScale != TPixel::Black)
     for (int i = 0; i < palette->getStyleCount(); i++)
       colors[i] = applyColorScaleCMapped(
           palette->getStyle(i)->getAverageColor(), globalColorScale);
@@ -4053,6 +4097,10 @@ void doQuickPutCmapped(const TRaster32P &dn, const TRasterCM32P &up,
         inks[i]   = s.m_blackBgCheck ? s.m_transpCheckBg : s.m_transpCheckInk;
       }
     }
+  } else if (s.m_halfColor) {
+    for (int i = 0; i < styleCount; i++)
+      paints[i] = inks[i] = applyHalfColorCMapped(
+          palette->getStyle(i)->getAverageColor(), s.m_globalColorScale);
   } else if (s.m_globalColorScale == TPixel::Black) {
     for (int i = 0; i < styleCount; i++)
       paints[i] = inks[i] =
@@ -4240,7 +4288,7 @@ void doQuickPutCmapped(const TRaster32P &dn, const TRasterCM32P &up,
 void doQuickPutCmapped(const TRaster32P &dn, const TRasterCM32P &up,
                        const TPaletteP &palette, double sx, double sy,
                        double tx, double ty, const TPixel32 &globalColorScale,
-                       bool inksOnly) {
+                       bool inksOnly, bool halfColor) {
   // if aff := TAffine(sx, 0, tx, 0, sy, ty) is degenerate, the inverse image
   // of up is a segment (or a point)
   if ((sx == 0) || (sy == 0)) return;
@@ -4418,7 +4466,11 @@ void doQuickPutCmapped(const TRaster32P &dn, const TRasterCM32P &up,
 
   std::vector<TPixel32> paints(count + 1, TPixel32::Red);
   std::vector<TPixel32> inks(count + 1, TPixel32::Red);
-  if (globalColorScale != TPixel::Black)
+  if (halfColor)
+    for (int i = 0; i < palette->getStyleCount(); i++)
+      paints[i] = inks[i] = applyHalfColorCMapped(
+          palette->getStyle(i)->getAverageColor(), globalColorScale);
+  else if (globalColorScale != TPixel::Black)
     for (int i = 0; i < palette->getStyleCount(); i++)
       paints[i] = inks[i] = applyColorScaleCMapped(
           palette->getStyle(i)->getAverageColor(), globalColorScale);
@@ -5040,14 +5092,16 @@ void doQuickResampleFilter_optimized(const TRaster32P &dn, const TRaster32P &up,
 
 void TRop::quickPut(const TRasterP &dn, const TRasterCM32P &upCM32,
                     const TPaletteP &plt, const TAffine &aff,
-                    const TPixel32 &globalColorScale, bool inksOnly) {
+                    const TPixel32 &globalColorScale, bool inksOnly,
+                    bool halfColor) {
   TRaster32P dn32 = dn;
   if (dn32 && upCM32)
     if (areAlmostEqual(aff.a12, 0) && areAlmostEqual(aff.a21, 0))
       doQuickPutCmapped(dn32, upCM32, plt, aff.a11, aff.a22, aff.a13, aff.a23,
-                        globalColorScale, inksOnly);
+                        globalColorScale, inksOnly, halfColor);
     else
-      doQuickPutCmapped(dn32, upCM32, plt, aff, globalColorScale, inksOnly);
+      doQuickPutCmapped(dn32, upCM32, plt, aff, globalColorScale, inksOnly,
+                        halfColor);
   else
     throw TRopException("raster type mismatch");
 }
@@ -5107,7 +5161,7 @@ void TRop::quickResampleColorFilter(const TRasterP &dn, const TRasterP &up,
 void quickPut(const TRasterP &dn, const TRasterP &up, const TAffine &aff,
               TRop::ResampleFilterType filterType, const TPixel32 &colorScale,
               bool doPremultiply, bool whiteTransp, bool firstColumn,
-              bool doRasterDarkenBlendedView) {
+              bool doRasterDarkenBlendedView, bool halfColor) {
   assert(filterType == TRop::Bilinear || filterType == TRop::ClosestPixel);
 
   bool bilinear = filterType == TRop::Bilinear;
@@ -5125,9 +5179,9 @@ void quickPut(const TRasterP &dn, const TRasterP &up, const TAffine &aff,
     assert(filterType == TRop::ClosestPixel);
     if (areAlmostEqual(aff.a12, 0) && areAlmostEqual(aff.a21, 0))
       doQuickPutNoFilter(dn32, up8, aff.a11, aff.a22, aff.a13, aff.a23,
-                         colorScale);
+                         colorScale, halfColor);
     else
-      doQuickPutNoFilter(dn32, up8, aff, colorScale);
+      doQuickPutNoFilter(dn32, up8, aff, colorScale, halfColor);
   } else if (dn32 && up32) {
     if (areAlmostEqual(aff.a12, 0) && areAlmostEqual(aff.a21, 0)) {
       if (bilinear)
@@ -5135,13 +5189,14 @@ void quickPut(const TRasterP &dn, const TRasterP &up, const TAffine &aff,
       else {
         doQuickPutNoFilter(dn32, up32, aff.a11, aff.a22, aff.a13, aff.a23,
                            colorScale, doPremultiply, whiteTransp, firstColumn,
-                           doRasterDarkenBlendedView);
+                           doRasterDarkenBlendedView, halfColor);
       }
     } else if (bilinear)
       doQuickPutFilter(dn32, up32, aff);
     else {
       doQuickPutNoFilter(dn32, up32, aff, colorScale, doPremultiply,
-                         whiteTransp, firstColumn, doRasterDarkenBlendedView);
+                         whiteTransp, firstColumn, doRasterDarkenBlendedView,
+                         halfColor);
     }
   } else if (dn32 && up64)
     doQuickPutNoFilter(dn32, up64, aff, doPremultiply, firstColumn);

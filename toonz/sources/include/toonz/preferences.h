@@ -116,6 +116,12 @@ public:
     ShowLevelNameOnColumnHeader
   };
 
+  enum ShiftAndTraceGhostColorMode {
+    ShiftAndTraceGhost_OriginalColors = 0,
+    ShiftAndTraceGhost_OnionSkinColors,
+    ShiftAndTraceGhost_HalfColor
+  };
+
   //--- callbacks
   // General
   void enableAutosave();
@@ -378,6 +384,9 @@ public:
   int getTempToolSwitchTimer() const {
     return getIntValue(tempToolSwitchTimer);
   }
+  bool isKeepToolOnViewNavigationEnabled() const {
+    return getBoolValue(keepToolOnViewNavigation);
+  }
   double getAnimateToolHandleSize() const {
     return getDoubleValue(animateToolHandleSize);
   }
@@ -525,11 +534,21 @@ public:
     backColor  = getColorValue(backOnionColor),
     inksOnly   = getBoolValue(onionInksOnly);
   }
+  bool isOnionOpacityAppliedToCheckColors() const {
+    return getBoolValue(applyOnionOpacityToCheckColors);
+  }
   bool getOnionSkinDuringPlayback() {
     return getBoolValue(onionSkinDuringPlayback);
   }
-  bool areOnionColorsUsedForShiftAndTraceGhosts() const {
-    return getBoolValue(useOnionColorsForShiftAndTraceGhosts);
+  ShiftAndTraceGhostColorMode getShiftAndTraceGhostColorMode() const {
+    return ShiftAndTraceGhostColorMode(
+        getIntValue(shiftAndTraceGhostColorMode));
+  }
+  int getShiftAndTraceGhostOpacity() const {
+    return getIntValue(shiftAndTraceGhostOpacity);
+  }
+  bool isShiftAndTraceAlignmentPerFrameEnabled() const {
+    return getBoolValue(shiftAndTraceAlignmentPerFrame);
   }
   bool getAnimatedGuidedDrawing() const {
     return getIntValue(animatedGuidedDrawing) == 1;
@@ -569,6 +588,9 @@ public:
   bool isWinInkEnabled() const { return getBoolValue(winInkEnabled); }
   bool isQtNativeWinInkEnabled() const {
     return getBoolValue(useQtNativeWinInk);
+  }
+  bool isAlignTabletStrokesToCursorEnabled() const {
+    return getBoolValue(alignTabletStrokesToCursor);
   }
 
   // Others (not appeared in the popup)

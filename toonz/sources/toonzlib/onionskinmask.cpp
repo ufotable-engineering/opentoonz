@@ -60,12 +60,7 @@ void OnionSkinMask::clear() {
 
   m_shiftTraceStatus = DISABLED;
 
-  m_ghostAff[0]    = TAffine();
-  m_ghostAff[1]    = TAffine();
-  m_ghostCenter[0] = TPointD();
-  m_ghostCenter[1] = TPointD();
-  m_ghostFrame[0]  = 0;
-  m_ghostFrame[1]  = 0;
+  m_shiftTrace = ShiftTraceAlignment();
 }
 
 //-------------------------------------------------------------------
@@ -225,14 +220,23 @@ double OnionSkinMask::getOnionSkinFade(int rowsDistance) {
 
 void OnionSkinMask::setShiftTraceGhostAff(int index, const TAffine &aff) {
   assert(0 <= index && index < 2);
-  m_ghostAff[index] = aff;
+  m_shiftTrace.m_ghostAff[index] = aff;
 }
 
 //-------------------------------------------------------------------
 
 void OnionSkinMask::setShiftTraceGhostCenter(int index, const TPointD &center) {
   assert(0 <= index && index < 2);
-  m_ghostCenter[index] = center;
+  m_shiftTrace.m_ghostCenter[index] = center;
+}
+
+//-------------------------------------------------------------------
+
+void OnionSkinMask::resetShiftTraceGhost(int index) {
+  assert(0 <= index && index < 2);
+  m_shiftTrace.m_ghostAff[index]    = TAffine();
+  m_shiftTrace.m_ghostCenter[index] = TPointD();
+  m_shiftTrace.m_trajectory         = ShiftTraceTrajectory();
 }
 
 //***************************************************************************

@@ -490,9 +490,9 @@ void TRop::over(TRasterP rout, const TRasterCM32P &rup, TPalette *palette,
 void TRop::quickPut(const TRasterP &out, const TRasterP &up, const TAffine &aff,
                     const TPixel32 &colorScale, bool doPremultiply,
                     bool whiteTransp, bool firstColumn,
-                    bool doRasterDarkenBlendedView) {
+                    bool doRasterDarkenBlendedView, bool halfColor) {
   ::quickPut(out, up, aff, ClosestPixel, colorScale, doPremultiply, whiteTransp,
-             firstColumn, doRasterDarkenBlendedView);
+             firstColumn, doRasterDarkenBlendedView, halfColor);
 }
 
 //===================================================================
