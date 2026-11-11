@@ -2954,11 +2954,6 @@ bool isShownAs(MeasuredValueField *field, double value) {
          field->getMeasuredValue()->toWideString(field->getPrecision());
 }
 
-// Dragging in the viewer refreshes the fields while one may be typed in
-void showGhostValue(MeasuredValueField *field, double value) {
-  if (!field->hasFocus() || !field->isModified()) field->setValue(value);
-}
-
 }  // namespace
 
 // T_ShiftTrace binds one instance for every target type, so any target
@@ -3339,19 +3334,20 @@ void ShiftTraceSettingsPane::updateGhostFields() {
   // The other tools leave the ghosts as they are
   if (TTool::getApplication()->getCurrentTool()->getTool() != m_tool) return;
   bool editable = m_tool->refreshCurrentGhost();
-  // Disabling a field being typed in commits it, so it is refreshed after
-  for (MeasuredValueField *field :
-       {m_positionFields[0], m_positionFields[1], m_rotationField,
-        m_scaleFields[0], m_scaleFields[1]})
-    field->setEnabled(editable);
   TPointD pos   = m_tool->getGhostPosition() / Stage::inch;
   double angle  = m_tool->getGhostRotation();
   TPointD scale = m_tool->getGhostScale();
-  showGhostValue(m_positionFields[0], pos.x);
-  showGhostValue(m_positionFields[1], pos.y);
-  showGhostValue(m_rotationField, angle);
-  showGhostValue(m_scaleFields[0], scale.x);
-  showGhostValue(m_scaleFields[1], scale.y);
+  // Disabling a field being typed in commits it, so it is refreshed after.
+  // Dragging in the viewer gets here while one may be typed in
+  auto show = [editable](MeasuredValueField *field, double value) {
+    field->setEnabled(editable);
+    if (!field->hasFocus() || !field->isModified()) field->setValue(value);
+  };
+  show(m_positionFields[0], pos.x);
+  show(m_positionFields[1], pos.y);
+  show(m_rotationField, angle);
+  show(m_scaleFields[0], scale.x);
+  show(m_scaleFields[1], scale.y);
   m_resetPositionBtn->setEnabled(editable && !(pos == TPointD()));
   m_resetRotationBtn->setEnabled(editable && !areAlmostEqual(angle, 0.0));
   m_resetScaleBtn->setEnabled(editable && !(scale == TPointD(1, 1)));

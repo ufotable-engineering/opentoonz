@@ -420,8 +420,7 @@ TPointD ShiftTraceTool::ghostCenter() const {
 bool ShiftTraceTool::refreshCurrentGhost() {
   followMask();
   updateData();
-  return 0 <= m_ghostIndex && m_ghostIndex < 2 && m_row[m_ghostIndex] >= 0 &&
-         !m_box.isEmpty();
+  return !m_box.isEmpty();
 }
 
 TPointD ShiftTraceTool::getGhostPosition() const {
@@ -431,7 +430,7 @@ TPointD ShiftTraceTool::getGhostPosition() const {
 
 double ShiftTraceTool::getGhostRotation() const {
   const TAffine &aff = m_aff[m_ghostIndex];
-  return atan(TPointD(aff.a11, aff.a21)) * M_180_PI;
+  return rad2degree(atan(TPointD(aff.a11, aff.a21)));
 }
 
 // A mirrored ghost gets a negative vertical scale
