@@ -1729,8 +1729,40 @@ Do you want to proceed?</source>
         <translation>両方</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>リセット</translation>
+    </message>
+    <message>
         <source>Drawing to Move:</source>
         <translation>動かす絵:</translation>
+    </message>
+    <message>
+        <source>Position:</source>
+        <translation>位置:</translation>
+    </message>
+    <message>
+        <source>X:</source>
+        <translation>X:</translation>
+    </message>
+    <message>
+        <source>Y:</source>
+        <translation>Y:</translation>
+    </message>
+    <message>
+        <source>Rotation:</source>
+        <translation>回転:</translation>
+    </message>
+    <message>
+        <source>Scale:</source>
+        <translation>拡大率:</translation>
+    </message>
+    <message>
+        <source>H:</source>
+        <translation>水平:</translation>
+    </message>
+    <message>
+        <source>V:</source>
+        <translation>垂直:</translation>
     </message>
     <message>
         <source>Reset:</source>
