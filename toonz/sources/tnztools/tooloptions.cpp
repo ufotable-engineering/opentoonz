@@ -3089,8 +3089,10 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     m_ghostBtns[i]->setFocusPolicy(Qt::NoFocus);
     ghostGroup->addButton(m_ghostBtns[i]);
     ghostLayout->addWidget(m_ghostBtns[i], 0);
-    connect(m_ghostBtns[i], &QPushButton::clicked, this,
-            [this, i]() { m_tool->setCurrentGhostIndex(i); });
+    connect(m_ghostBtns[i], &QPushButton::clicked, this, [this, i]() {
+      commitTypedValue();
+      m_tool->setCurrentGhostIndex(i);
+    });
   }
   ghostLayout->addStretch(1);
 
@@ -3105,8 +3107,12 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     resetLayout->addWidget(btn, 0);
   }
   resetLayout->addStretch(1);
-  connect(m_resetSelectedBtn, &QPushButton::clicked, this,
-          [this]() { resetShiftTraceGhost(m_tool->getCurrentGhostIndex()); });
+  connect(m_resetSelectedBtn, &QPushButton::clicked, this, [this]() {
+    commitTypedValue();
+    resetShiftTraceGhost(m_tool->getCurrentGhostIndex());
+  });
+  connect(m_resetBothBtn, &QPushButton::clicked, this,
+          [this]() { commitTypedValue(); });
   connect(m_resetBothBtn, &QPushButton::clicked, cm->getAction(MI_ResetShift),
           &QAction::trigger);
 
@@ -3137,12 +3143,18 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   m_resetPositionBtn = newGhostResetBtn();
   m_resetRotationBtn = newGhostResetBtn();
   m_resetScaleBtn    = newGhostResetBtn();
-  connect(m_resetPositionBtn, &QPushButton::clicked, this,
-          [this]() { m_tool->setGhostPosition(TPointD()); });
-  connect(m_resetRotationBtn, &QPushButton::clicked, this,
-          [this]() { m_tool->setGhostRotation(0); });
-  connect(m_resetScaleBtn, &QPushButton::clicked, this,
-          [this]() { m_tool->setGhostScale(TPointD(1, 1)); });
+  connect(m_resetPositionBtn, &QPushButton::clicked, this, [this]() {
+    commitTypedValue();
+    m_tool->setGhostPosition(TPointD());
+  });
+  connect(m_resetRotationBtn, &QPushButton::clicked, this, [this]() {
+    commitTypedValue();
+    m_tool->setGhostRotation(0);
+  });
+  connect(m_resetScaleBtn, &QPushButton::clicked, this, [this]() {
+    commitTypedValue();
+    m_tool->setGhostScale(TPointD(1, 1));
+  });
 
   m_editShiftContents          = new QWidget(this);
   QGridLayout *editShiftLayout = new QGridLayout(m_editShiftContents);
@@ -3330,9 +3342,22 @@ void ShiftTraceSettingsPane::updateStatus() {
 
 //-----------------------------------------------------------------------------
 
+// The buttons take no focus, so a value still being typed would otherwise be
+// applied after them, to a drawing just reset or to the other one
+
+void ShiftTraceSettingsPane::commitTypedValue() {
+  if (QWidget *field = focusWidget()) field->clearFocus();
+}
+
+//-----------------------------------------------------------------------------
+
 void ShiftTraceSettingsPane::updateGhostFields() {
-  // The other tools leave the ghosts as they are
-  if (TTool::getApplication()->getCurrentTool()->getTool() != m_tool) return;
+  // The fields stay enabled while a navigation tool suspends the tool, and
+  // the other tools leave the ghosts as they are
+  ToolHandle *toolHandle = TTool::getApplication()->getCurrentTool();
+  if (toolHandle->getTool() != m_tool &&
+      toolHandle->getSuspendedTool() != m_tool)
+    return;
   bool editable = m_tool->refreshCurrentGhost();
   TPointD pos   = m_tool->getGhostPosition() / Stage::inch;
   double angle  = m_tool->getGhostRotation();

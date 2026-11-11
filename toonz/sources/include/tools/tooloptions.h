@@ -803,6 +803,7 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   DVGui::CheckBox *m_inksOnlyCB;
 
   void applySnapRatio(const std::wstring &value);
+  void commitTypedValue();
   void updateGhostFields();
   void applyGhostPosition(int axis);
   void applyGhostRotation();
