@@ -846,12 +846,14 @@ void ShiftTraceTool::onLeave() {
 }
 
 void ShiftTraceTool::setCurrentGhostIndex(int index) {
+  if (m_ghostIndex == index) return;
   m_ghostIndex = index;
   updateBox();
   invalidate();
-  TTool::getApplication()
-      ->getCurrentTool()
-      ->notifyToolChanged();  // Refreshes toolbar values
+  if (TTool::Application *app = getApplication()) {
+    if (ToolHandle *toolHandle = app->getCurrentTool())
+      toolHandle->notifyToolChanged();
+  }
 }
 
 bool ShiftTraceTool::onPropertyChanged(std::string propertyName) {

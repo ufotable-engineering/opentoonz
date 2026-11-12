@@ -40,6 +40,8 @@ TTool *ToolHandle::getTool() const { return m_tool; }
 //-----------------------------------------------------------------------------
 
 void ToolHandle::setTool(QString name) {
+  const bool toolNameChanged = m_toolName != name;
+
   TTool *tool       = TTool::getTool(name.toStdString(),
                                      (TTool::ToolTargetType)m_toolTargetType);
   bool toNavigation = isViewerNavigationTool(name);
@@ -53,7 +55,12 @@ void ToolHandle::setTool(QString name) {
   // unsetPseudoTool() must still return to the tool used before the pseudo tool
   if (!m_suspendedTool || (!toNavigation && !resumed)) m_oldToolName = name;
   m_toolName = name;
-  if (tool == m_tool) return;
+  if (tool == m_tool) {
+    // Different requested tools can share the same placeholder instance.
+    // Refresh the UI without reactivating an already active tool.
+    if (m_tool && toolNameChanged) emit toolSwitched();
+    return;
+  }
 
   if (m_tool && m_tool != m_suspendedTool) m_tool->onDeactivate();
   if (m_suspendedTool && !toNavigation) {
