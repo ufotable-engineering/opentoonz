@@ -2954,6 +2954,41 @@ bool isShownAs(MeasuredValueField *field, double value) {
          field->getMeasuredValue()->toWideString(field->getPrecision());
 }
 
+enum GhostField {
+  GhostX,
+  GhostY,
+  GhostRotation,
+  GhostScaleH,
+  GhostScaleV,
+  GhostFieldCount
+};
+
+TEnv::IntVar ShiftTracePositionInPixels("ShiftTracePositionInPixels", 1);
+TEnv::IntVar ShiftTraceLockScaleRatio("ShiftTraceLockScaleRatio", 1);
+
+// The pixels of the Preferences' pixel unit, so that the numbers match the
+// other fields of the application
+const TUnit *pixelUnit(int index) {
+  return TMeasureManager::instance()
+      ->get(index == GhostX ? "length.x" : "length.y")
+      ->getUnit(L"px");
+}
+
+// A ghost dragged in the viewer has a fractional value, from which the step
+// buttons move to the next whole step
+double steppedValue(MeasuredValueField *field, double value, int direction) {
+  const TMeasure *measure = field->getMeasuredValue()->getMeasure();
+  TMeasuredValue stepped(measure->getName());
+  stepped.setValue(TMeasuredValue::MainUnit, value);
+  std::wstring unit = measure->getCurrentUnit()->getDefaultExtension();
+  double step       = (unit == L"\"" || unit == L"cm") ? 0.1 : 1;
+  double steps      = stepped.getValue(TMeasuredValue::CurrentUnit) / step;
+  steps             = direction > 0 ? std::floor(steps + 1e-6) + 1
+                                    : std::ceil(steps - 1e-6) - 1;
+  stepped.setValue(TMeasuredValue::CurrentUnit, steps * step);
+  return stepped.getValue(TMeasuredValue::MainUnit);
+}
+
 }  // namespace
 
 // T_ShiftTrace binds one instance for every target type, so any target
@@ -3128,18 +3163,38 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     btn->setFocusPolicy(Qt::NoFocus);
     return btn;
   };
-  for (int i = 0; i < 2; i++) {
-    m_positionFields[i] = newGhostField(i == 0 ? "length.x" : "length.y");
-    m_scaleFields[i]    = newGhostField("scale");
-    m_scaleFields[i]->setValue(1);
-    connect(m_positionFields[i], &MeasuredValueField::measuredValueChanged,
-            this, [this, i]() { applyGhostPosition(i); });
-    connect(m_scaleFields[i], &MeasuredValueField::measuredValueChanged, this,
-            [this, i]() { applyGhostScale(i); });
+  const std::string measures[GhostFieldCount] = {"length.x", "length.y",
+                                                 "angle", "scale", "scale"};
+  for (int i = 0; i < GhostFieldCount; i++) {
+    m_ghostFields[i] = newGhostField(measures[i]);
+    connect(m_ghostFields[i], &MeasuredValueField::measuredValueChanged, this,
+            [this, i]() { applyGhostField(i); });
   }
-  m_rotationField = newGhostField("angle");
-  connect(m_rotationField, &MeasuredValueField::measuredValueChanged, this,
-          [this]() { applyGhostRotation(); });
+  m_ghostFields[GhostScaleH]->setValue(1);
+  m_ghostFields[GhostScaleV]->setValue(1);
+
+  m_positionUnitCombo = new QComboBox(this);
+  m_positionUnitCombo->setFocusPolicy(Qt::NoFocus);
+  m_positionUnitCombo->addItem("px");
+  m_positionUnitCombo->addItem("");
+  m_positionUnitCombo->setCurrentIndex(ShiftTracePositionInPixels ? 0 : 1);
+  connect(m_positionUnitCombo, QOverload<int>::of(&QComboBox::activated), this,
+          [this](int index) {
+            commitTypedValue();
+            ShiftTracePositionInPixels = index == 0;
+            updatePositionUnit();
+            updateGhostFields();
+          });
+  updatePositionUnit();
+
+  m_lockScaleCB = new DVGui::CheckBox("", this);
+  m_lockScaleCB->setObjectName("EditToolLockButton");
+  m_lockScaleCB->setFocusPolicy(Qt::NoFocus);
+  m_lockScaleCB->setToolTip(tr("Keep Aspect Ratio"));
+  m_lockScaleCB->setChecked(ShiftTraceLockScaleRatio);
+  connect(m_lockScaleCB, &QCheckBox::clicked, this,
+          [](bool checked) { ShiftTraceLockScaleRatio = checked; });
+
   m_resetPositionBtn = newGhostResetBtn();
   m_resetRotationBtn = newGhostResetBtn();
   m_resetScaleBtn    = newGhostResetBtn();
@@ -3164,25 +3219,56 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   editShiftLayout->addWidget(new QLabel(tr("Drawing to Move:"), this), 0, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
   editShiftLayout->addLayout(ghostLayout, 0, 1);
-  auto addGhostRow = [&](int row, const QString &label,
-                         std::initializer_list<QWidget *> widgets) {
+  // Dragging the label changes the value without the keyboard
+  auto newDragLabel = [this](const QString &text, int index) {
+    ClickableLabel *label     = new ClickableLabel(text, this);
+    MeasuredValueField *field = m_ghostFields[index];
+    label->setCursor(Qt::SizeHorCursor);
+    connect(label, SIGNAL(onMousePress(QMouseEvent *)), field,
+            SLOT(receiveMousePress(QMouseEvent *)));
+    connect(label, SIGNAL(onMouseMove(QMouseEvent *)), field,
+            SLOT(receiveMouseMove(QMouseEvent *)));
+    connect(label, SIGNAL(onMouseRelease(QMouseEvent *)), field,
+            SLOT(receiveMouseRelease(QMouseEvent *)));
+    return label;
+  };
+  auto newStepBtn = [this](int index, int direction) {
+    QPushButton *btn =
+        new QPushButton(direction > 0 ? "+" : QString(QChar(0x2212)), this);
+    btn->setFixedSize(21, 21);
+    btn->setFocusPolicy(Qt::NoFocus);
+    btn->setAutoRepeat(true);
+    connect(btn, &QPushButton::clicked, this,
+            [this, index, direction]() { stepGhostField(index, direction); });
+    m_ghostStepBtns.push_back(btn);
+    return btn;
+  };
+  auto addGhostRow = [&](int row, QLabel *label, QList<QWidget *> widgets) {
     QHBoxLayout *rowLayout = new QHBoxLayout;
     rowLayout->setContentsMargins(0, 0, 0, 0);
     rowLayout->setSpacing(4);
     for (QWidget *widget : widgets) rowLayout->addWidget(widget, 0);
     rowLayout->addStretch(1);
-    editShiftLayout->addWidget(new QLabel(label, this), row, 0,
+    editShiftLayout->addWidget(label, row, 0,
                                Qt::AlignRight | Qt::AlignVCenter);
     editShiftLayout->addLayout(rowLayout, row, 1);
   };
-  addGhostRow(
-      1, tr("Position:"),
-      {new QLabel(tr("X:"), this), m_positionFields[0],
-       new QLabel(tr("Y:"), this), m_positionFields[1], m_resetPositionBtn});
-  addGhostRow(2, tr("Rotation:"), {m_rotationField, m_resetRotationBtn});
-  addGhostRow(3, tr("Scale:"),
-              {new QLabel(tr("H:"), this), m_scaleFields[0],
-               new QLabel(tr("V:"), this), m_scaleFields[1], m_resetScaleBtn});
+  auto fieldWidgets = [&](int index, const QString &label) {
+    QList<QWidget *> widgets;
+    if (!label.isEmpty()) widgets << newDragLabel(label, index);
+    return widgets << newStepBtn(index, -1) << m_ghostFields[index]
+                   << newStepBtn(index, 1);
+  };
+  addGhostRow(1, new QLabel(tr("Position:"), this),
+              fieldWidgets(GhostX, tr("X:"))
+                  << fieldWidgets(GhostY, tr("Y:")) << m_positionUnitCombo
+                  << m_resetPositionBtn);
+  addGhostRow(2, newDragLabel(tr("Rotation:"), GhostRotation),
+              fieldWidgets(GhostRotation, QString()) << m_resetRotationBtn);
+  addGhostRow(3, new QLabel(tr("Scale:"), this),
+              fieldWidgets(GhostScaleH, tr("H:"))
+                  << fieldWidgets(GhostScaleV, tr("V:")) << m_lockScaleCB
+                  << m_resetScaleBtn);
   editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 4, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
   editShiftLayout->addLayout(resetLayout, 4, 1);
@@ -3359,63 +3445,90 @@ void ShiftTraceSettingsPane::updateGhostFields() {
       toolHandle->getSuspendedTool() != m_tool)
     return;
   bool editable = m_tool->refreshCurrentGhost();
-  TPointD pos   = m_tool->getGhostPosition() / Stage::inch;
-  double angle  = m_tool->getGhostRotation();
-  TPointD scale = m_tool->getGhostScale();
   // Disabling a field being typed in commits it, so it is refreshed after.
   // Dragging in the viewer gets here while one may be typed in
-  auto show = [editable](MeasuredValueField *field, double value) {
+  for (int i = 0; i < GhostFieldCount; i++) {
+    MeasuredValueField *field = m_ghostFields[i];
     field->setEnabled(editable);
-    if (!field->hasFocus() || !field->isModified()) field->setValue(value);
-  };
-  show(m_positionFields[0], pos.x);
-  show(m_positionFields[1], pos.y);
-  show(m_rotationField, angle);
-  show(m_scaleFields[0], scale.x);
-  show(m_scaleFields[1], scale.y);
-  m_resetPositionBtn->setEnabled(editable && !(pos == TPointD()));
-  m_resetRotationBtn->setEnabled(editable && !areAlmostEqual(angle, 0.0));
+    if (!field->hasFocus() || !field->isModified())
+      field->setValue(ghostFieldValue(i));
+  }
+  for (QPushButton *btn : m_ghostStepBtns) btn->setEnabled(editable);
+  TPointD scale = m_tool->getGhostScale();
+  m_resetPositionBtn->setEnabled(editable &&
+                                 !(m_tool->getGhostPosition() == TPointD()));
+  m_resetRotationBtn->setEnabled(
+      editable && !areAlmostEqual(m_tool->getGhostRotation(), 0.0));
   m_resetScaleBtn->setEnabled(editable && !(scale == TPointD(1, 1)));
 }
 
 //-----------------------------------------------------------------------------
+// The pixel unit depends on the camera, so the fields take plain numbers and
+// the conversion is done here
 
-void ShiftTraceSettingsPane::applyGhostPosition(int axis) {
-  if (!m_tool->refreshCurrentGhost()) return;
-  MeasuredValueField *field = m_positionFields[axis];
-  TPointD pos               = m_tool->getGhostPosition() / Stage::inch;
-  double &value             = axis == 0 ? pos.x : pos.y;
-  if (isShownAs(field, value)) return;
-  value = field->getValue();
-  m_tool->setGhostPosition(pos * Stage::inch);
+void ShiftTraceSettingsPane::updatePositionUnit() {
+  bool pixels = ShiftTracePositionInPixels;
+  m_ghostFields[GhostX]->setMeasure(pixels ? "" : "length.x");
+  m_ghostFields[GhostY]->setMeasure(pixels ? "" : "length.y");
 }
 
 //-----------------------------------------------------------------------------
 
-void ShiftTraceSettingsPane::applyGhostRotation() {
-  if (!m_tool->refreshCurrentGhost() ||
-      isShownAs(m_rotationField, m_tool->getGhostRotation()))
-    return;
-  m_tool->setGhostRotation(m_rotationField->getValue());
+double ShiftTraceSettingsPane::ghostFieldValue(int index) const {
+  if (index == GhostRotation) return m_tool->getGhostRotation();
+  if (index == GhostScaleH || index == GhostScaleV) {
+    TPointD scale = m_tool->getGhostScale();
+    return index == GhostScaleH ? scale.x : scale.y;
+  }
+  TPointD pos  = m_tool->getGhostPosition() / Stage::inch;
+  double value = index == GhostX ? pos.x : pos.y;
+  return ShiftTracePositionInPixels ? pixelUnit(index)->convertTo(value)
+                                    : value;
 }
 
 //-----------------------------------------------------------------------------
 // The horizontal scale is the length of the rotated x axis, which leaves a
 // mirror to the vertical one, and a scale shown as 0 collapses the drawing
 
-void ShiftTraceSettingsPane::applyGhostScale(int axis) {
-  if (!m_tool->refreshCurrentGhost()) return;
-  MeasuredValueField *field = m_scaleFields[axis];
-  TPointD scale             = m_tool->getGhostScale();
-  double &value             = axis == 0 ? scale.x : scale.y;
-  if (isShownAs(field, value)) return;
-  double entered = field->getValue();
-  if ((axis == 0 ? entered : std::abs(entered)) < kMinGhostScale) {
-    field->setValue(value);
-    return;
+void ShiftTraceSettingsPane::setGhostFieldValue(int index, double value) {
+  if (index == GhostRotation) {
+    m_tool->setGhostRotation(value);
+  } else if (index == GhostScaleH || index == GhostScaleV) {
+    TPointD scale   = m_tool->getGhostScale();
+    double &entered = index == GhostScaleH ? scale.x : scale.y;
+    double &other   = index == GhostScaleH ? scale.y : scale.x;
+    if (m_lockScaleCB->isChecked() && std::abs(entered) >= kMinGhostScale)
+      other *= std::abs(value / entered);
+    entered = value;
+    if (scale.x < kMinGhostScale || std::abs(scale.y) < kMinGhostScale)
+      updateGhostFields();
+    else
+      m_tool->setGhostScale(scale);
+  } else {
+    if (ShiftTracePositionInPixels)
+      value = pixelUnit(index)->convertFrom(value);
+    TPointD pos                       = m_tool->getGhostPosition();
+    (index == GhostX ? pos.x : pos.y) = value * Stage::inch;
+    m_tool->setGhostPosition(pos);
   }
-  value = entered;
-  m_tool->setGhostScale(scale);
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::applyGhostField(int index) {
+  if (!m_tool->refreshCurrentGhost() ||
+      isShownAs(m_ghostFields[index], ghostFieldValue(index)))
+    return;
+  setGhostFieldValue(index, m_ghostFields[index]->getValue());
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::stepGhostField(int index, int direction) {
+  commitTypedValue();
+  if (!m_tool->refreshCurrentGhost()) return;
+  setGhostFieldValue(index, steppedValue(m_ghostFields[index],
+                                         ghostFieldValue(index), direction));
 }
 
 //-----------------------------------------------------------------------------
@@ -3473,6 +3586,11 @@ void ShiftTraceSettingsPane::updateDisplayFields() {
   m_colorModeCombo->setCurrentIndex(m_colorModeCombo->findData(colorMode));
   m_alignmentPerFrameCB->setChecked(
       pref->getBoolValue(shiftAndTraceAlignmentPerFrame));
+  m_positionUnitCombo->setItemText(
+      1, QString::fromStdWString(TMeasureManager::instance()
+                                     ->get("length.x")
+                                     ->getCurrentUnit()
+                                     ->getDefaultExtension()));
 }
 
 //=============================================================================

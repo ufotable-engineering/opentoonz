@@ -1765,6 +1765,10 @@ Do you want to proceed?</source>
         <translation>垂直:</translation>
     </message>
     <message>
+        <source>Keep Aspect Ratio</source>
+        <translation>縦横比を固定</translation>
+    </message>
+    <message>
         <source>Reset:</source>
         <translation>リセット:</translation>
     </message>
