@@ -81,6 +81,8 @@ private:
   double snapOrJump(double ratio) const;
   void parseSnapRatio();
   void updateSnapRatioText();
+  TPointD ghostCenter() const;
+  void updateGhostAndNotify();
 
 public:
   ShiftTraceTool();
@@ -114,6 +116,7 @@ public:
 
   void onActivate() override;
   void onDeactivate() override;
+  void onImageChanged() override;
 
   void onLeave() override;
 
@@ -129,4 +132,16 @@ public:
   int getSnapNumerator() const { return m_snapNumerator; }
   int getSnapDivision() const { return m_snapDivision; }
   void setCurrentGhostIndex(int index);
+
+  // The settings panel may read the ghosts before the viewer redraws them,
+  // e.g. right after a reset. Returns whether the selected one has a drawing
+  bool refreshCurrentGhost();
+  // The selected ghost as the move of its center in stage units, then its
+  // rotation in degrees and its scale around the center
+  TPointD getGhostPosition() const;
+  double getGhostRotation() const;
+  TPointD getGhostScale() const;
+  void setGhostPosition(const TPointD &position);
+  void setGhostRotation(double angle);
+  void setGhostScale(const TPointD &scale);
 };

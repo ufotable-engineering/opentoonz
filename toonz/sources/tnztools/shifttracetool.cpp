@@ -413,6 +413,66 @@ TAffine ShiftTraceTool::getGhostAff() {
     return TAffine();
 }
 
+TPointD ShiftTraceTool::ghostCenter() const {
+  return m_dpiAff * m_center[m_ghostIndex];
+}
+
+bool ShiftTraceTool::refreshCurrentGhost() {
+  followMask();
+  updateData();
+  return !m_box.isEmpty();
+}
+
+TPointD ShiftTraceTool::getGhostPosition() const {
+  TPointD center = ghostCenter();
+  return m_aff[m_ghostIndex] * center - center;
+}
+
+double ShiftTraceTool::getGhostRotation() const {
+  const TAffine &aff = m_aff[m_ghostIndex];
+  return rad2degree(atan(TPointD(aff.a11, aff.a21)));
+}
+
+// A mirrored ghost gets a negative vertical scale
+TPointD ShiftTraceTool::getGhostScale() const {
+  const TAffine &aff = m_aff[m_ghostIndex];
+  double sx          = norm(TPointD(aff.a11, aff.a21));
+  return TPointD(sx, sx > 0 ? aff.det() / sx : 0);
+}
+
+void ShiftTraceTool::setGhostPosition(const TPointD &position) {
+  if (!refreshCurrentGhost()) return;
+  m_aff[m_ghostIndex] =
+      TTranslation(position - getGhostPosition()) * m_aff[m_ghostIndex];
+  updateGhostAndNotify();
+}
+
+void ShiftTraceTool::setGhostRotation(double angle) {
+  if (!refreshCurrentGhost()) return;
+  TAffine &aff = m_aff[m_ghostIndex];
+  aff = TRotation(aff * ghostCenter(), angle - getGhostRotation()) * aff;
+  updateGhostAndNotify();
+}
+
+// The shear left by scaling a rotated ghost with Shift has no field, so an
+// entered scale replaces it
+void ShiftTraceTool::setGhostScale(const TPointD &scale) {
+  if (!refreshCurrentGhost()) return;
+  TPointD center      = ghostCenter();
+  m_aff[m_ghostIndex] = TTranslation(m_aff[m_ghostIndex] * center) *
+                        TRotation(getGhostRotation()) *
+                        TScale(scale.x, scale.y) * TTranslation(-center);
+  updateGhostAndNotify();
+}
+
+void ShiftTraceTool::updateGhostAndNotify() {
+  updateGhost();
+  invalidate();
+  TTool::getApplication()
+      ->getCurrentTool()
+      ->notifyToolChanged();  // Refreshes toolbar values
+}
+
 void ShiftTraceTool::drawDot(const TPointD &center, double r,
                              const TPixel32 &color) {
   tglColor(color);
@@ -561,6 +621,12 @@ void ShiftTraceTool::onDeactivate() {
     osm.setShiftTraceStatus(OnionSkinMask::ENABLED);
     TTool::getApplication()->getCurrentOnionSkin()->setOnionSkinMask(osm);
   }
+}
+
+// The settings panel edits the selected ghost only while it has a drawing on
+// the current frame
+void ShiftTraceTool::onImageChanged() {
+  TTool::getApplication()->getCurrentTool()->notifyToolChanged();
 }
 
 ShiftTraceTool::GadgetId ShiftTraceTool::getGadget(const TPointD &p) {
@@ -789,8 +855,7 @@ void ShiftTraceTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
     }
   }
 
-  updateGhost();
-  invalidate();
+  updateGhostAndNotify();
 }
 
 void ShiftTraceTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
