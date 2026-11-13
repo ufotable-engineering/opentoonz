@@ -67,6 +67,9 @@
 #include <QPushButton>
 #include <QToolButton>
 #include <QResizeEvent>
+#include <QMouseEvent>
+
+#include <functional>
 #include <QList>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
@@ -2974,20 +2977,83 @@ const TUnit *pixelUnit(int index) {
       ->getUnit(L"px");
 }
 
-// A ghost dragged in the viewer has a fractional value, from which the step
-// buttons move to the next whole step
-double steppedValue(MeasuredValueField *field, double value, int direction) {
+// Moves a value by steps of 1 in the unit the field shows, or of 0.1 in the
+// coarse units. A ghost dragged in the viewer has a fractional value, from
+// which the step buttons snap to the next whole step
+double steppedValue(MeasuredValueField *field, double value, double steps,
+                    bool snap) {
   const TMeasure *measure = field->getMeasuredValue()->getMeasure();
   TMeasuredValue stepped(measure->getName());
   stepped.setValue(TMeasuredValue::MainUnit, value);
   std::wstring unit = measure->getCurrentUnit()->getDefaultExtension();
   double step       = (unit == L"\"" || unit == L"cm") ? 0.1 : 1;
-  double steps      = stepped.getValue(TMeasuredValue::CurrentUnit) / step;
-  steps             = direction > 0 ? std::floor(steps + 1e-6) + 1
-                                    : std::ceil(steps - 1e-6) - 1;
-  stepped.setValue(TMeasuredValue::CurrentUnit, steps * step);
+  double current    = stepped.getValue(TMeasuredValue::CurrentUnit) / step;
+  if (snap)
+    current = steps > 0 ? std::floor(current + 1e-6) + 1
+                        : std::ceil(current - 1e-6) - 1;
+  else
+    current += steps;
+  stepped.setValue(TMeasuredValue::CurrentUnit, current * step);
   return stepped.getValue(TMeasuredValue::MainUnit);
 }
+
+// Steps for each pixel a jog bar is dragged: a ghost follows the pen in
+// pixels, and half a degree or percent keeps both fine and large moves in
+// reach of one stroke
+const double kJogSteps[GhostFieldCount] = {1, 1, 0.5, 0.5, 0.5};
+const double kJogStepsInPreferencesUnit = 0.2;
+
+// A bar dragged sideways to change a value by feel, without a range to fit
+// the unbounded position in. The ticks scroll with the drag
+class JogBar final : public QWidget {
+  std::function<void()> m_onPress;
+  std::function<void(int)> m_onDrag;
+  int m_pressX = 0, m_offset = 0, m_pressOffset = 0;
+
+public:
+  JogBar(QWidget *parent, std::function<void()> onPress,
+         std::function<void(int)> onDrag)
+      : QWidget(parent), m_onPress(onPress), m_onDrag(onDrag) {
+    setFixedHeight(21);
+    setMinimumWidth(80);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setCursor(Qt::SizeHorCursor);
+  }
+
+protected:
+  void paintEvent(QPaintEvent *) override {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    QColor color =
+        palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled,
+                        QPalette::WindowText);
+    QRectF bar = QRectF(rect()).adjusted(0.5, 2.5, -0.5, -2.5);
+    color.setAlphaF(0.15);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawRoundedRect(bar, 3, 3);
+    color.setAlphaF(0.5);
+    p.setPen(color);
+    const int spacing = 8;
+    for (int x = ((m_offset % spacing) + spacing) % spacing; x < width();
+         x += spacing)
+      p.drawLine(QPointF(x + 0.5, bar.top() + 4),
+                 QPointF(x + 0.5, bar.bottom() - 4));
+  }
+  void mousePressEvent(QMouseEvent *e) override {
+    if (e->button() != Qt::LeftButton) return;
+    m_pressX      = e->x();
+    m_pressOffset = m_offset;
+    m_onPress();
+  }
+  void mouseMoveEvent(QMouseEvent *e) override {
+    if (!(e->buttons() & Qt::LeftButton)) return;
+    int distance = e->x() - m_pressX;
+    m_offset     = m_pressOffset + distance;
+    update();
+    m_onDrag(distance);
+  }
+};
 
 }  // namespace
 
@@ -3218,7 +3284,7 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   editShiftLayout->setVerticalSpacing(6);
   editShiftLayout->addWidget(new QLabel(tr("Drawing to Move:"), this), 0, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
-  editShiftLayout->addLayout(ghostLayout, 0, 1);
+  editShiftLayout->addLayout(ghostLayout, 0, 1, 1, 2);
   // Dragging the label changes the value without the keyboard
   auto newDragLabel = [this](const QString &text, int index) {
     ClickableLabel *label     = new ClickableLabel(text, this);
@@ -3240,38 +3306,55 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     btn->setAutoRepeat(true);
     connect(btn, &QPushButton::clicked, this,
             [this, index, direction]() { stepGhostField(index, direction); });
-    m_ghostStepBtns.push_back(btn);
+    m_ghostControls.push_back(btn);
     return btn;
   };
-  auto addGhostRow = [&](int row, QLabel *label, QList<QWidget *> widgets) {
+  auto newJogBar = [this](int index) {
+    JogBar *bar = new JogBar(
+        this, [this, index]() { startGhostJog(index); },
+        [this, index](int distance) { jogGhostField(index, distance); });
+    m_ghostControls.push_back(bar);
+    return bar;
+  };
+  // The jog bars line up only when every row starts with the same width
+  int axisWidth = 0;
+  for (const QString &axis : {tr("X:"), tr("Y:"), tr("H:"), tr("V:")})
+    axisWidth = std::max(axisWidth, fontMetrics().horizontalAdvance(axis));
+  auto addGhostRow = [&](int row, QLabel *groupLabel, int index,
+                         const QString &axis, QList<QWidget *> groupWidgets) {
+    QLabel *axisLabel =
+        axis.isEmpty() ? new QLabel(this) : newDragLabel(axis, index);
+    axisLabel->setFixedWidth(axisWidth);
     QHBoxLayout *rowLayout = new QHBoxLayout;
     rowLayout->setContentsMargins(0, 0, 0, 0);
     rowLayout->setSpacing(4);
-    for (QWidget *widget : widgets) rowLayout->addWidget(widget, 0);
-    rowLayout->addStretch(1);
-    editShiftLayout->addWidget(label, row, 0,
-                               Qt::AlignRight | Qt::AlignVCenter);
+    rowLayout->addWidget(axisLabel, 0);
+    rowLayout->addWidget(newStepBtn(index, -1), 0);
+    rowLayout->addWidget(m_ghostFields[index], 0);
+    rowLayout->addWidget(newStepBtn(index, 1), 0);
+    rowLayout->addWidget(newJogBar(index), 1);
+    if (groupLabel)
+      editShiftLayout->addWidget(groupLabel, row, 0,
+                                 Qt::AlignRight | Qt::AlignVCenter);
     editShiftLayout->addLayout(rowLayout, row, 1);
+    if (groupWidgets.isEmpty()) return;
+    QHBoxLayout *groupLayout = new QHBoxLayout;
+    groupLayout->setContentsMargins(0, 0, 0, 0);
+    groupLayout->setSpacing(4);
+    for (QWidget *widget : groupWidgets) groupLayout->addWidget(widget, 0);
+    editShiftLayout->addLayout(groupLayout, row, 2, Qt::AlignRight);
   };
-  auto fieldWidgets = [&](int index, const QString &label) {
-    QList<QWidget *> widgets;
-    if (!label.isEmpty()) widgets << newDragLabel(label, index);
-    return widgets << newStepBtn(index, -1) << m_ghostFields[index]
-                   << newStepBtn(index, 1);
-  };
-  addGhostRow(1, new QLabel(tr("Position:"), this),
-              fieldWidgets(GhostX, tr("X:"))
-                  << fieldWidgets(GhostY, tr("Y:")) << m_positionUnitCombo
-                  << m_resetPositionBtn);
-  addGhostRow(2, newDragLabel(tr("Rotation:"), GhostRotation),
-              fieldWidgets(GhostRotation, QString()) << m_resetRotationBtn);
-  addGhostRow(3, new QLabel(tr("Scale:"), this),
-              fieldWidgets(GhostScaleH, tr("H:"))
-                  << fieldWidgets(GhostScaleV, tr("V:")) << m_lockScaleCB
-                  << m_resetScaleBtn);
-  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 4, 0,
+  addGhostRow(1, new QLabel(tr("Position:"), this), GhostX, tr("X:"),
+              {m_positionUnitCombo, m_resetPositionBtn});
+  addGhostRow(2, nullptr, GhostY, tr("Y:"), {});
+  addGhostRow(3, newDragLabel(tr("Rotation:"), GhostRotation), GhostRotation,
+              QString(), {m_resetRotationBtn});
+  addGhostRow(4, new QLabel(tr("Scale:"), this), GhostScaleH, tr("H:"),
+              {m_lockScaleCB, m_resetScaleBtn});
+  addGhostRow(5, nullptr, GhostScaleV, tr("V:"), {});
+  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 6, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
-  editShiftLayout->addLayout(resetLayout, 4, 1);
+  editShiftLayout->addLayout(resetLayout, 6, 1, 1, 2);
   editShiftLayout->setColumnStretch(1, 1);
 
   TPropertyGroup *pg     = m_tool->getProperties(0);
@@ -3305,9 +3388,9 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     ratioLayout->addWidget(m_snapDenominatorField, 0);
     ratioLayout->addStretch(1);
     editShiftLayout->addWidget(
-        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 5, 0,
+        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 7, 0,
         Qt::AlignRight | Qt::AlignVCenter);
-    editShiftLayout->addLayout(ratioLayout, 5, 1);
+    editShiftLayout->addLayout(ratioLayout, 7, 1, 1, 2);
   }
 
   QList<QCheckBox *> optionBoxes;
@@ -3336,7 +3419,7 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   for (int i = 0; i < optionBoxes.size(); i++)
     optionLayout->addWidget(optionBoxes[i], i / 2, i % 2);
   optionLayout->setColumnStretch(2, 1);
-  editShiftLayout->addLayout(optionLayout, 6, 0, 1, 2);
+  editShiftLayout->addLayout(optionLayout, 8, 0, 1, 3);
 
   QAction *editShiftAction = cm->getAction(MI_EditShift);
   QGroupBox *editShiftBox  = new QGroupBox(editShiftAction->text(), this);
@@ -3453,7 +3536,7 @@ void ShiftTraceSettingsPane::updateGhostFields() {
     if (!field->hasFocus() || !field->isModified())
       field->setValue(ghostFieldValue(i));
   }
-  for (QPushButton *btn : m_ghostStepBtns) btn->setEnabled(editable);
+  for (QWidget *control : m_ghostControls) control->setEnabled(editable);
   TPointD scale = m_tool->getGhostScale();
   m_resetPositionBtn->setEnabled(editable &&
                                  !(m_tool->getGhostPosition() == TPointD()));
@@ -3527,8 +3610,30 @@ void ShiftTraceSettingsPane::applyGhostField(int index) {
 void ShiftTraceSettingsPane::stepGhostField(int index, int direction) {
   commitTypedValue();
   if (!m_tool->refreshCurrentGhost()) return;
-  setGhostFieldValue(index, steppedValue(m_ghostFields[index],
-                                         ghostFieldValue(index), direction));
+  setGhostFieldValue(index,
+                     steppedValue(m_ghostFields[index], ghostFieldValue(index),
+                                  direction, true));
+}
+
+//-----------------------------------------------------------------------------
+// The value follows the distance from where the drag started, which leaves no
+// rounding to add up over the drag
+
+void ShiftTraceSettingsPane::startGhostJog(int index) {
+  commitTypedValue();
+  m_tool->refreshCurrentGhost();
+  m_jogStartValue = ghostFieldValue(index);
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::jogGhostField(int index, int distance) {
+  if (!m_tool->refreshCurrentGhost()) return;
+  bool preferencesUnit = index <= GhostY && !ShiftTracePositionInPixels;
+  double steps = distance * (preferencesUnit ? kJogStepsInPreferencesUnit
+                                             : kJogSteps[index]);
+  setGhostFieldValue(
+      index, steppedValue(m_ghostFields[index], m_jogStartValue, steps, false));
 }
 
 //-----------------------------------------------------------------------------

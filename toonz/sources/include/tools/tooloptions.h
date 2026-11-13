@@ -793,7 +793,8 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   QPushButton *m_ghostBtns[2];
   QPushButton *m_resetSelectedBtn, *m_resetBothBtn;
   MeasuredValueField *m_ghostFields[5];
-  QList<QPushButton *> m_ghostStepBtns;
+  QList<QWidget *> m_ghostControls;
+  double m_jogStartValue;
   QComboBox *m_positionUnitCombo;
   DVGui::CheckBox *m_lockScaleCB;
   QPushButton *m_resetPositionBtn, *m_resetRotationBtn, *m_resetScaleBtn;
@@ -813,6 +814,8 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   void setGhostFieldValue(int index, double value);
   void applyGhostField(int index);
   void stepGhostField(int index, int direction);
+  void startGhostJog(int index);
+  void jogGhostField(int index, int distance);
 
 public:
   ShiftTraceSettingsPane(QWidget *parent = 0);
