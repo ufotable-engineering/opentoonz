@@ -2965,6 +2965,17 @@ enum GhostField {
   GhostFieldCount
 };
 
+TEnv::IntVar ShiftTracePositionInPixels("ShiftTracePositionInPixels", 1);
+TEnv::IntVar ShiftTraceLockScaleRatio("ShiftTraceLockScaleRatio", 1);
+
+// The pixels of the Preferences' pixel unit, so that the numbers match the
+// other fields of the application
+const TUnit *pixelUnit(int index) {
+  return TMeasureManager::instance()
+      ->get(index == GhostX ? "length.x" : "length.y")
+      ->getUnit(L"px");
+}
+
 }  // namespace
 
 // T_ShiftTrace binds one instance for every target type, so any target
@@ -3140,6 +3151,25 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   m_ghostFields[GhostScaleH]->setValue(1);
   m_ghostFields[GhostScaleV]->setValue(1);
 
+  m_positionUnitCombo = new QComboBox(this);
+  m_positionUnitCombo->setFocusPolicy(Qt::NoFocus);
+  m_positionUnitCombo->addItem("px");
+  m_positionUnitCombo->addItem("");
+  connect(m_positionUnitCombo, QOverload<int>::of(&QComboBox::activated), this,
+          [this](int index) {
+            commitTypedValue();
+            ShiftTracePositionInPixels = index == 0;
+            updatePositionUnit();
+            updateGhostFields();
+          });
+
+  m_lockScaleCB = new DVGui::CheckBox("", this);
+  m_lockScaleCB->setObjectName("EditToolLockButton");
+  m_lockScaleCB->setFocusPolicy(Qt::NoFocus);
+  m_lockScaleCB->setToolTip(tr("Keep Aspect Ratio"));
+  connect(m_lockScaleCB, &QCheckBox::clicked, this,
+          [](bool checked) { ShiftTraceLockScaleRatio = checked; });
+
   auto newGhostResetBtn = [this](std::function<void()> reset) {
     QPushButton *btn = new QPushButton(tr("Reset"), this);
     btn->setFixedHeight(21);
@@ -3191,12 +3221,12 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     editShiftLayout->addLayout(groupLayout, row, 2, Qt::AlignRight);
   };
   addGhostRow(1, new QLabel(tr("Position:"), this), GhostX, tr("X:"),
-              {m_resetPositionBtn});
+              {m_positionUnitCombo, m_resetPositionBtn});
   addGhostRow(2, nullptr, GhostY, tr("Y:"), {});
   addGhostRow(3, new QLabel(tr("Rotation:"), this), GhostRotation, QString(),
               {m_resetRotationBtn});
   addGhostRow(4, new QLabel(tr("Scale:"), this), GhostScaleH, tr("H:"),
-              {m_resetScaleBtn});
+              {m_lockScaleCB, m_resetScaleBtn});
   addGhostRow(5, nullptr, GhostScaleV, tr("V:"), {});
   editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 6, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
@@ -3293,6 +3323,12 @@ ShiftTraceSettingsPane::~ShiftTraceSettingsPane() {
 //-----------------------------------------------------------------------------
 
 void ShiftTraceSettingsPane::showEvent(QShowEvent *) {
+  // The panel of another room may have changed them
+  m_positionUnitCombo->setCurrentIndex(ShiftTracePositionInPixels ? 0 : 1);
+  updatePositionUnit();
+  updateGhostFields();
+  m_lockScaleCB->setChecked(ShiftTraceLockScaleRatio);
+
   ToolHandle *currTool = TTool::getApplication()->getCurrentTool();
   currTool->disconnect(this);
   onToolSwitched();
@@ -3391,6 +3427,16 @@ void ShiftTraceSettingsPane::updateGhostFields() {
 }
 
 //-----------------------------------------------------------------------------
+// The pixel unit depends on the camera, so the fields take plain numbers and
+// the conversion is done here
+
+void ShiftTraceSettingsPane::updatePositionUnit() {
+  bool pixels = ShiftTracePositionInPixels;
+  m_ghostFields[GhostX]->setMeasure(pixels ? "" : "length.x");
+  m_ghostFields[GhostY]->setMeasure(pixels ? "" : "length.y");
+}
+
+//-----------------------------------------------------------------------------
 
 double ShiftTraceSettingsPane::ghostFieldValue(int index) const {
   if (index == GhostRotation) return m_tool->getGhostRotation();
@@ -3398,8 +3444,10 @@ double ShiftTraceSettingsPane::ghostFieldValue(int index) const {
     TPointD scale = m_tool->getGhostScale();
     return index == GhostScaleH ? scale.x : scale.y;
   }
-  TPointD pos = m_tool->getGhostPosition() / Stage::inch;
-  return index == GhostX ? pos.x : pos.y;
+  TPointD pos  = m_tool->getGhostPosition() / Stage::inch;
+  double value = index == GhostX ? pos.x : pos.y;
+  return ShiftTracePositionInPixels ? pixelUnit(index)->convertTo(value)
+                                    : value;
 }
 
 //-----------------------------------------------------------------------------
@@ -3410,13 +3458,19 @@ void ShiftTraceSettingsPane::setGhostFieldValue(int index, double value) {
   if (index == GhostRotation) {
     m_tool->setGhostRotation(value);
   } else if (index == GhostScaleH || index == GhostScaleV) {
-    TPointD scale                              = m_tool->getGhostScale();
-    (index == GhostScaleH ? scale.x : scale.y) = value;
+    TPointD scale   = m_tool->getGhostScale();
+    double &entered = index == GhostScaleH ? scale.x : scale.y;
+    double &other   = index == GhostScaleH ? scale.y : scale.x;
+    if (ShiftTraceLockScaleRatio && std::abs(entered) >= kMinGhostScale)
+      other *= std::abs(value / entered);
+    entered = value;
     if (scale.x < kMinGhostScale || std::abs(scale.y) < kMinGhostScale)
       updateGhostFields();
     else
       m_tool->setGhostScale(scale);
   } else {
+    if (ShiftTracePositionInPixels)
+      value = pixelUnit(index)->convertFrom(value);
     TPointD pos                       = m_tool->getGhostPosition();
     (index == GhostX ? pos.x : pos.y) = value * Stage::inch;
     m_tool->setGhostPosition(pos);
@@ -3487,6 +3541,11 @@ void ShiftTraceSettingsPane::updateDisplayFields() {
   m_colorModeCombo->setCurrentIndex(m_colorModeCombo->findData(colorMode));
   m_alignmentPerFrameCB->setChecked(
       pref->getBoolValue(shiftAndTraceAlignmentPerFrame));
+  m_positionUnitCombo->setItemText(
+      1, QString::fromStdWString(TMeasureManager::instance()
+                                     ->get("length.x")
+                                     ->getCurrentUnit()
+                                     ->getDefaultExtension()));
 }
 
 //=============================================================================
