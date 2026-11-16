@@ -47,6 +47,7 @@
 #include "toonz/tstageobjecttree.h"
 #include "toonz/mypaintbrushstyle.h"
 #include "toonz/tonionskinmaskhandle.h"
+#include "toonz/stage.h"
 
 // TnzCore includes
 #include "tproperty.h"
@@ -66,6 +67,8 @@
 #include <QPushButton>
 #include <QToolButton>
 #include <QResizeEvent>
+
+#include <functional>
 #include <QList>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
@@ -2941,6 +2944,27 @@ void setOnionSkinPreference(PreferencesItemId id, const QVariant &value,
   TTool::getApplication()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
 }
 
+// The smallest scale the fields show as other than 0 %
+const double kMinGhostScale = 0.0001;
+
+// Leaving a field commits its text even when it was not edited, and the text
+// is rounded, so only a value that reads differently counts as an input
+bool isShownAs(MeasuredValueField *field, double value) {
+  TMeasuredValue shown(field->getMeasuredValue()->getMeasure()->getName());
+  shown.setValue(TMeasuredValue::MainUnit, value);
+  return shown.toWideString(field->getPrecision()) ==
+         field->getMeasuredValue()->toWideString(field->getPrecision());
+}
+
+enum GhostField {
+  GhostX,
+  GhostY,
+  GhostRotation,
+  GhostScaleH,
+  GhostScaleV,
+  GhostFieldCount
+};
+
 }  // namespace
 
 // T_ShiftTrace binds one instance for every target type, so any target
@@ -3076,8 +3100,10 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     m_ghostBtns[i]->setFocusPolicy(Qt::NoFocus);
     ghostGroup->addButton(m_ghostBtns[i]);
     ghostLayout->addWidget(m_ghostBtns[i], 0);
-    connect(m_ghostBtns[i], &QPushButton::clicked, this,
-            [this, i]() { m_tool->setCurrentGhostIndex(i); });
+    connect(m_ghostBtns[i], &QPushButton::clicked, this, [this, i]() {
+      commitTypedValue();
+      m_tool->setCurrentGhostIndex(i);
+    });
   }
   ghostLayout->addStretch(1);
 
@@ -3092,10 +3118,44 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     resetLayout->addWidget(btn, 0);
   }
   resetLayout->addStretch(1);
-  connect(m_resetSelectedBtn, &QPushButton::clicked, this,
-          [this]() { resetShiftTraceGhost(m_tool->getCurrentGhostIndex()); });
-  connect(m_resetBothBtn, &QPushButton::clicked, cm->getAction(MI_ResetShift),
-          &QAction::trigger);
+  connect(m_resetSelectedBtn, &QPushButton::clicked, this, [this]() {
+    commitTypedValue();
+    resetShiftTraceGhost(m_tool->getCurrentGhostIndex());
+  });
+  connect(m_resetBothBtn, &QPushButton::clicked, this, [this, cm]() {
+    commitTypedValue();
+    cm->getAction(MI_ResetShift)->trigger();
+  });
+
+  const std::string measures[GhostFieldCount] = {"length.x", "length.y",
+                                                 "angle", "scale", "scale"};
+  for (int i = 0; i < GhostFieldCount; i++) {
+    m_ghostFields[i] = new MeasuredValueField(this);
+    m_ghostFields[i]->setMeasure(measures[i]);
+    m_ghostFields[i]->setFixedWidth(
+        fontMetrics().horizontalAdvance("-0000.00 mm") + 10);
+    connect(m_ghostFields[i], &MeasuredValueField::measuredValueChanged, this,
+            [this, i]() { applyGhostField(i); });
+  }
+  m_ghostFields[GhostScaleH]->setValue(1);
+  m_ghostFields[GhostScaleV]->setValue(1);
+
+  auto newGhostResetBtn = [this](std::function<void()> reset) {
+    QPushButton *btn = new QPushButton(tr("Reset"), this);
+    btn->setFixedHeight(21);
+    btn->setFocusPolicy(Qt::NoFocus);
+    connect(btn, &QPushButton::clicked, this, [this, reset]() {
+      commitTypedValue();
+      reset();
+    });
+    return btn;
+  };
+  m_resetPositionBtn =
+      newGhostResetBtn([this]() { m_tool->setGhostPosition(TPointD()); });
+  m_resetRotationBtn =
+      newGhostResetBtn([this]() { m_tool->setGhostRotation(0); });
+  m_resetScaleBtn =
+      newGhostResetBtn([this]() { m_tool->setGhostScale(TPointD(1, 1)); });
 
   m_editShiftContents          = new QWidget(this);
   QGridLayout *editShiftLayout = new QGridLayout(m_editShiftContents);
@@ -3104,10 +3164,43 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   editShiftLayout->setVerticalSpacing(6);
   editShiftLayout->addWidget(new QLabel(tr("Drawing to Move:"), this), 0, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
-  editShiftLayout->addLayout(ghostLayout, 0, 1);
-  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 1, 0,
+  editShiftLayout->addLayout(ghostLayout, 0, 1, 1, 2);
+  // The fields line up only when every row starts with the same width
+  int axisWidth = 0;
+  for (const QString &axis : {tr("X:"), tr("Y:"), tr("H:"), tr("V:")})
+    axisWidth = std::max(axisWidth, fontMetrics().horizontalAdvance(axis));
+  auto addGhostRow = [&](int row, QLabel *groupLabel, int index,
+                         const QString &axis, QList<QWidget *> groupWidgets) {
+    QLabel *axisLabel = new QLabel(axis, this);
+    axisLabel->setFixedWidth(axisWidth);
+    QHBoxLayout *rowLayout = new QHBoxLayout;
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(4);
+    rowLayout->addWidget(axisLabel, 0);
+    rowLayout->addWidget(m_ghostFields[index], 0);
+    rowLayout->addStretch(1);
+    if (groupLabel)
+      editShiftLayout->addWidget(groupLabel, row, 0,
+                                 Qt::AlignRight | Qt::AlignVCenter);
+    editShiftLayout->addLayout(rowLayout, row, 1);
+    if (groupWidgets.isEmpty()) return;
+    QHBoxLayout *groupLayout = new QHBoxLayout;
+    groupLayout->setContentsMargins(0, 0, 0, 0);
+    groupLayout->setSpacing(4);
+    for (QWidget *widget : groupWidgets) groupLayout->addWidget(widget, 0);
+    editShiftLayout->addLayout(groupLayout, row, 2, Qt::AlignRight);
+  };
+  addGhostRow(1, new QLabel(tr("Position:"), this), GhostX, tr("X:"),
+              {m_resetPositionBtn});
+  addGhostRow(2, nullptr, GhostY, tr("Y:"), {});
+  addGhostRow(3, new QLabel(tr("Rotation:"), this), GhostRotation, QString(),
+              {m_resetRotationBtn});
+  addGhostRow(4, new QLabel(tr("Scale:"), this), GhostScaleH, tr("H:"),
+              {m_resetScaleBtn});
+  addGhostRow(5, nullptr, GhostScaleV, tr("V:"), {});
+  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 6, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
-  editShiftLayout->addLayout(resetLayout, 1, 1);
+  editShiftLayout->addLayout(resetLayout, 6, 1, 1, 2);
   editShiftLayout->setColumnStretch(1, 1);
 
   TPropertyGroup *pg     = m_tool->getProperties(0);
@@ -3141,9 +3234,9 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     ratioLayout->addWidget(m_snapDenominatorField, 0);
     ratioLayout->addStretch(1);
     editShiftLayout->addWidget(
-        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 2, 0,
+        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 7, 0,
         Qt::AlignRight | Qt::AlignVCenter);
-    editShiftLayout->addLayout(ratioLayout, 2, 1);
+    editShiftLayout->addLayout(ratioLayout, 7, 1, 1, 2);
   }
 
   QList<QCheckBox *> optionBoxes;
@@ -3172,7 +3265,7 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   for (int i = 0; i < optionBoxes.size(); i++)
     optionLayout->addWidget(optionBoxes[i], i / 2, i % 2);
   optionLayout->setColumnStretch(2, 1);
-  editShiftLayout->addLayout(optionLayout, 3, 0, 1, 2);
+  editShiftLayout->addLayout(optionLayout, 8, 0, 1, 3);
 
   QAction *editShiftAction = cm->getAction(MI_EditShift);
   QGroupBox *editShiftBox  = new QGroupBox(editShiftAction->text(), this);
@@ -3246,6 +3339,7 @@ void ShiftTraceSettingsPane::updateStatus() {
     m_resetSelectedBtn->setEnabled(isGhostMoved(osm, ghostIndex));
   }
   m_resetBothBtn->setEnabled(isGhostMoved(osm, 0) || isGhostMoved(osm, 1));
+  updateGhostFields();
 
   if (!m_snapRatioProp) return;
   QString current = QString::fromStdWString(m_snapRatioProp->getValue());
@@ -3259,6 +3353,83 @@ void ShiftTraceSettingsPane::updateStatus() {
   if (!m_snapDenominatorEdited)
     m_snapDenominatorField->setText(division >= 2 ? QString::number(division)
                                                   : QString());
+}
+
+//-----------------------------------------------------------------------------
+
+// The buttons take no focus, so a value still being typed would otherwise be
+// applied after them, to a drawing just reset or to the other one
+
+void ShiftTraceSettingsPane::commitTypedValue() {
+  if (QWidget *field = focusWidget()) field->clearFocus();
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::updateGhostFields() {
+  // The fields stay enabled while a navigation tool suspends the tool, and
+  // the other tools leave the ghosts as they are
+  ToolHandle *toolHandle = TTool::getApplication()->getCurrentTool();
+  if (toolHandle->getTool() != m_tool &&
+      toolHandle->getSuspendedTool() != m_tool)
+    return;
+  bool editable = m_tool->refreshCurrentGhost();
+  // Disabling a field being typed in commits it, so it is refreshed after.
+  // Dragging in the viewer gets here while one may be typed in
+  for (int i = 0; i < GhostFieldCount; i++) {
+    MeasuredValueField *field = m_ghostFields[i];
+    field->setEnabled(editable);
+    if (!field->hasFocus() || !field->isModified())
+      field->setValue(ghostFieldValue(i));
+  }
+  TPointD scale = m_tool->getGhostScale();
+  m_resetPositionBtn->setEnabled(editable &&
+                                 !(m_tool->getGhostPosition() == TPointD()));
+  m_resetRotationBtn->setEnabled(
+      editable && !areAlmostEqual(m_tool->getGhostRotation(), 0.0));
+  m_resetScaleBtn->setEnabled(editable && !(scale == TPointD(1, 1)));
+}
+
+//-----------------------------------------------------------------------------
+
+double ShiftTraceSettingsPane::ghostFieldValue(int index) const {
+  if (index == GhostRotation) return m_tool->getGhostRotation();
+  if (index == GhostScaleH || index == GhostScaleV) {
+    TPointD scale = m_tool->getGhostScale();
+    return index == GhostScaleH ? scale.x : scale.y;
+  }
+  TPointD pos = m_tool->getGhostPosition() / Stage::inch;
+  return index == GhostX ? pos.x : pos.y;
+}
+
+//-----------------------------------------------------------------------------
+// The horizontal scale is the length of the rotated x axis, which leaves a
+// mirror to the vertical one, and a scale shown as 0 collapses the drawing
+
+void ShiftTraceSettingsPane::setGhostFieldValue(int index, double value) {
+  if (index == GhostRotation) {
+    m_tool->setGhostRotation(value);
+  } else if (index == GhostScaleH || index == GhostScaleV) {
+    TPointD scale                              = m_tool->getGhostScale();
+    (index == GhostScaleH ? scale.x : scale.y) = value;
+    if (scale.x < kMinGhostScale || std::abs(scale.y) < kMinGhostScale)
+      updateGhostFields();
+    else
+      m_tool->setGhostScale(scale);
+  } else {
+    TPointD pos                       = m_tool->getGhostPosition();
+    (index == GhostX ? pos.x : pos.y) = value * Stage::inch;
+    m_tool->setGhostPosition(pos);
+  }
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::applyGhostField(int index) {
+  if (!m_tool->refreshCurrentGhost() ||
+      isShownAs(m_ghostFields[index], ghostFieldValue(index)))
+    return;
+  setGhostFieldValue(index, m_ghostFields[index]->getValue());
 }
 
 //-----------------------------------------------------------------------------
