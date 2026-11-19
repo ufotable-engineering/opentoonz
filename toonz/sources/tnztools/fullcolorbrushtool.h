@@ -128,6 +128,7 @@ public:
 
 private:
   void updateModifiers();
+  void commitStroke();
   bool isSubPixelPencil() const;
   bool paintPencilTrackPoint(const TTrackPoint &point, const TTrack &track,
                              const TRaster32P &ras);
@@ -185,8 +186,11 @@ protected:
   bool m_firstTime;
 
   bool m_started;
+  TFrameId m_strokeFrameId;
+  TXshSimpleLevelP m_strokeLevel;
 
-  bool m_propertyUpdating = false;
+  bool m_propertyUpdating    = false;
+  bool m_skipStrokeUntilDown = false;
 
   TRasterCM32P m_pencilMask;
   TPixel32 m_pencilColor;  // premultiplied
