@@ -530,9 +530,12 @@ void ImageViewer::paintGL() {
             : m_flipbook->getLevelZoomTitle() + tr("  ::  Zoom : ") +
                   QString::number(tround(sqrt(m_viewAff.det()) * 100)) + " %";
     m_flipbook->parentWidget()->setWindowTitle(title);
-    imageSize = m_flipbook->getImageSize();
-    if (m_visualSettings.m_useLoadbox && m_flipbook->getLoadbox() != TRect())
-      loadbox = m_flipbook->getLoadbox();
+    // The level size is that of the first frame, so use it only to place an
+    // image cropped by the load box.
+    if (m_visualSettings.m_useLoadbox && m_flipbook->getLoadbox() != TRect()) {
+      imageSize = m_flipbook->getImageSize();
+      loadbox   = m_flipbook->getLoadbox();
+    }
   }
   m_visualSettings.m_sceneProperties =
       TApp::instance()->getCurrentScene()->getScene()->getProperties();
