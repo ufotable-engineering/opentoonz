@@ -51,7 +51,7 @@ class XdtsFrameDataItem {
   QList<QString> m_values;
   QList<QString> m_options;  // Extended options for Ponoc customized version
 
-  TFrameId str2Fid(const QString& str) const;
+  TFrameId str2Fid(const QString& str, const QString& levelName) const;
   QString fid2Str(const TFrameId& fid) const;
 
 public:
@@ -71,7 +71,7 @@ public:
     QStringList options;
   };
 
-  FrameInfo getFrameInfo() const;
+  FrameInfo getFrameInfo(const QString& levelName) const;
 };
 
 //=============================================================================
@@ -93,7 +93,8 @@ public:
   void read(const QJsonObject& json);
   void write(QJsonObject& json) const;
 
-  QPair<int, XdtsFrameDataItem::FrameInfo> frameFinfo() const;
+  QPair<int, XdtsFrameDataItem::FrameInfo> frameFinfo(
+      const QString& levelName) const;
 };
 
 //=============================================================================
@@ -113,7 +114,8 @@ public:
   bool isEmpty() const { return m_frames.isEmpty(); }
   int getTrackNo() const { return m_trackNo; }
 
-  QVector<TFrameId> getCellFrameIdTrack(QList<int>& tick1, QList<int>& tick2,
+  QVector<TFrameId> getCellFrameIdTrack(const QString& levelName,
+                                        QList<int>& tick1, QList<int>& tick2,
                                         QList<int>& keyFrames,
                                         QList<int>& refFrames) const;
 
@@ -142,8 +144,9 @@ public:
   bool isCellField() const { return m_fieldId == CELL; }
   QList<int> getOccupiedColumns() const;
 
-  QVector<TFrameId> getColumnTrack(int column, QList<int>& tick1,
-                                   QList<int>& tick2, QList<int>& keyFrames,
+  QVector<TFrameId> getColumnTrack(int column, const QString& levelName,
+                                   QList<int>& tick1, QList<int>& tick2,
+                                   QList<int>& keyFrames,
                                    QList<int>& refFrames) const;
 
   void build(TXsheet* xsheet, QStringList& columnLabels);
