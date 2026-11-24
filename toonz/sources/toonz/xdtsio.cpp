@@ -93,7 +93,8 @@ void XdtsHeader::write(QJsonObject& json) const {
 // XdtsFrameDataItem implementation
 //-----------------------------------------------------------------------------
 
-TFrameId XdtsFrameDataItem::str2Fid(const QString& str) const {
+TFrameId XdtsFrameDataItem::str2Fid(const QString& str,
+                                    const QString& levelName) const {
   if (str.isEmpty()) return TFrameId::EMPTY_FRAME;
 
   bool ok;
@@ -102,8 +103,17 @@ TFrameId XdtsFrameDataItem::str2Fid(const QString& str) const {
 
   static const QRegularExpression rx(
       QString("^%1$").arg(TFilePath::fidRegExpStr()));
-  const auto match = rx.match(str);
-  if (!match.hasMatch()) return TFrameId();
+  auto match = rx.match(str);
+  if (!match.hasMatch()) {
+    // The cell may be prefixed with the level name and up to three separator
+    // characters, e.g. "A_0001".
+    if (levelName.isEmpty() || !str.startsWith(levelName, Qt::CaseInsensitive))
+      return TFrameId();
+    static const QRegularExpression prefixedRx(
+        QString("^.{0,3}?%1$").arg(TFilePath::fidRegExpStr()));
+    match = prefixedRx.match(str.mid(levelName.length()));
+    if (!match.hasMatch()) return TFrameId();
+  }
 
   if (match.captured(2).isEmpty()) {
     return TFrameId(match.captured(1).toInt());
@@ -159,7 +169,8 @@ void XdtsFrameDataItem::write(QJsonObject& json) const {
   }
 }
 
-XdtsFrameDataItem::FrameInfo XdtsFrameDataItem::getFrameInfo() const {
+XdtsFrameDataItem::FrameInfo XdtsFrameDataItem::getFrameInfo(
+    const QString& levelName) const {
   if (m_values.isEmpty()) {
     return {TFrameId(-1), m_options};  // EMPTY cell
   }
@@ -175,7 +186,7 @@ XdtsFrameDataItem::FrameInfo XdtsFrameDataItem::getFrameInfo() const {
     return {TFrameId(SYMBOL_TICK_2), m_options};
   }
 
-  return {str2Fid(m_values.at(0)), m_options};
+  return {str2Fid(m_values.at(0), levelName), m_options};
 }
 
 //=============================================================================
@@ -203,9 +214,9 @@ void XdtsTrackFrameItem::write(QJsonObject& json) const {
   json["frame"] = m_frame;
 }
 
-QPair<int, XdtsFrameDataItem::FrameInfo> XdtsTrackFrameItem::frameFinfo()
-    const {
-  return {m_frame, m_data[0].getFrameInfo()};
+QPair<int, XdtsFrameDataItem::FrameInfo> XdtsTrackFrameItem::frameFinfo(
+    const QString& levelName) const {
+  return {m_frame, m_data[0].getFrameInfo(levelName)};
 }
 
 //=============================================================================
@@ -234,11 +245,11 @@ void XdtsFieldTrackItem::write(QJsonObject& json) const {
 }
 
 QVector<TFrameId> XdtsFieldTrackItem::getCellFrameIdTrack(
-    QList<int>& tick1, QList<int>& tick2, QList<int>& keyFrames,
-    QList<int>& refFrames) const {
+    const QString& levelName, QList<int>& tick1, QList<int>& tick2,
+    QList<int>& keyFrames, QList<int>& refFrames) const {
   QList<QPair<int, XdtsFrameDataItem::FrameInfo>> frameFinfos;
   for (const auto& frame : m_frames) {
-    frameFinfos.append(frame.frameFinfo());
+    frameFinfos.append(frame.frameFinfo(levelName));
   }
 
   std::sort(frameFinfos.begin(), frameFinfos.end(),
@@ -389,11 +400,12 @@ QList<int> XdtsTimeTableFieldItem::getOccupiedColumns() const {
 }
 
 QVector<TFrameId> XdtsTimeTableFieldItem::getColumnTrack(
-    int col, QList<int>& tick1, QList<int>& tick2, QList<int>& keyFrames,
-    QList<int>& refFrames) const {
+    int col, const QString& levelName, QList<int>& tick1, QList<int>& tick2,
+    QList<int>& keyFrames, QList<int>& refFrames) const {
   for (const auto& track : m_tracks) {
     if (track.getTrackNo() == col) {
-      return track.getCellFrameIdTrack(tick1, tick2, keyFrames, refFrames);
+      return track.getCellFrameIdTrack(levelName, tick1, tick2, keyFrames,
+                                       refFrames);
     }
   }
   return QVector<TFrameId>();
@@ -700,8 +712,8 @@ bool XdtsIo::loadXdtsScene(ToonzScene* scene, const TFilePath& scenePath) {
     TXshSimpleLevel* sl     = level ? level->getSimpleLevel() : nullptr;
 
     QList<int> tick1, tick2, keyFrames, refFrames;
-    const QVector<TFrameId> track =
-        cellField.getColumnTrack(column, tick1, tick2, keyFrames, refFrames);
+    const QVector<TFrameId> track = cellField.getColumnTrack(
+        column, levelName, tick1, tick2, keyFrames, refFrames);
 
     int row = 0;
     for (TFrameId fid : track) {
