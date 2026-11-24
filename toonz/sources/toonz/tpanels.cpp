@@ -1716,6 +1716,7 @@ ShiftTraceSettingsPanel::ShiftTraceSettingsPanel(QWidget *parent)
     : TPanel(parent) {
   setWidget(new ShiftTraceSettingsPane(this));
   setIsMaximizable(false);
+  installEventFilter(this);
 }
 
 //-----------------------------------------------------------------------------
@@ -1725,6 +1726,25 @@ ShiftTraceSettingsPanel::ShiftTraceSettingsPanel(QWidget *parent)
 
 void ShiftTraceSettingsPanel::showEvent(QShowEvent *) {
   setMinimumSize(minimumSizeHint());
+}
+
+//-----------------------------------------------------------------------------
+// DockWidget keeps event() private, so the layout request that follows a
+// folded section is caught by a filter
+
+bool ShiftTraceSettingsPanel::eventFilter(QObject *obj, QEvent *e) {
+  if (obj == this && e->type() == QEvent::LayoutRequest && isVisible()) {
+    QSize size = minimumSizeHint();
+    if (size != minimumSize()) {
+      setMinimumSize(size);
+      // A docked panel grown to its new minimum would cover its neighbors
+      if (isFloating())
+        resize(size);
+      else if (parentLayout())
+        parentLayout()->redistribute();
+    }
+  }
+  return TPanel::eventFilter(obj, e);
 }
 
 //-----------------------------------------------------------------------------

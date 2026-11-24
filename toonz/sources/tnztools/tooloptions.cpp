@@ -2968,6 +2968,16 @@ enum GhostField {
 
 TEnv::IntVar ShiftTracePositionInPixels("ShiftTracePositionInPixels", 1);
 TEnv::IntVar ShiftTraceLockScaleRatio("ShiftTraceLockScaleRatio", 1);
+TEnv::IntVar ShiftTraceShowDisplay("ShiftTraceShowDisplay", 1);
+TEnv::IntVar ShiftTraceShowDetails("ShiftTraceShowDetails", 0);
+
+void collectWidgets(QLayoutItem *item, QList<QWidget *> &widgets) {
+  if (QWidget *widget = item->widget())
+    widgets.push_back(widget);
+  else if (QLayout *layout = item->layout())
+    for (int i = 0; i < layout->count(); i++)
+      collectWidgets(layout->itemAt(i), widgets);
+}
 
 // The pixels of the Preferences' pixel unit, so that the numbers match the
 // other fields of the application
@@ -3158,8 +3168,24 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   modeLayout->addWidget(m_inksOnlyCB, 0);
   modeLayout->addStretch(1);
 
-  QGroupBox *displayBox      = new QGroupBox(tr("Display"), this);
-  QGridLayout *displayLayout = new QGridLayout(displayBox);
+  auto newFoldButton = [this](const QString &text, TEnv::IntVar &shown) {
+    QToolButton *btn = new QToolButton(this);
+    btn->setText(text);
+    btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btn->setFocusPolicy(Qt::NoFocus);
+    connect(btn, &QToolButton::clicked, this, [this, &shown]() {
+      commitTypedValue();
+      shown = !shown;
+      updateFolds();
+    });
+    return btn;
+  };
+  m_displayFoldBtn = newFoldButton(tr("Display"), ShiftTraceShowDisplay);
+  layout->addWidget(m_displayFoldBtn, 0, Qt::AlignLeft);
+
+  m_displayContents          = new QWidget(this);
+  QGridLayout *displayLayout = new QGridLayout(m_displayContents);
+  displayLayout->setContentsMargins(20, 0, 0, 0);
   displayLayout->setHorizontalSpacing(6);
   displayLayout->setVerticalSpacing(6);
   displayLayout->addWidget(new QLabel(tr("Opacity:"), this), 0, 0,
@@ -3172,7 +3198,7 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
                            Qt::AlignRight | Qt::AlignVCenter);
   displayLayout->addLayout(modeLayout, 2, 1);
   displayLayout->setColumnStretch(1, 1);
-  layout->addWidget(displayBox, 0);
+  layout->addWidget(m_displayContents, 0);
 
   //---- Edit Shift
 
@@ -3322,24 +3348,23 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
       editShiftLayout->addWidget(groupLabel, row, 0,
                                  Qt::AlignRight | Qt::AlignVCenter);
     editShiftLayout->addLayout(rowLayout, row, 1);
-    if (groupWidgets.isEmpty()) return;
-    QHBoxLayout *groupLayout = new QHBoxLayout;
-    groupLayout->setContentsMargins(0, 0, 0, 0);
-    groupLayout->setSpacing(4);
-    for (QWidget *widget : groupWidgets) groupLayout->addWidget(widget, 0);
-    editShiftLayout->addLayout(groupLayout, row, 2, Qt::AlignRight);
+    if (!groupWidgets.isEmpty()) {
+      QHBoxLayout *groupLayout = new QHBoxLayout;
+      groupLayout->setContentsMargins(0, 0, 0, 0);
+      groupLayout->setSpacing(4);
+      for (QWidget *widget : groupWidgets) groupLayout->addWidget(widget, 0);
+      editShiftLayout->addLayout(groupLayout, row, 2, Qt::AlignRight);
+    }
+    return axisLabel;
   };
-  addGhostRow(1, new QLabel(tr("Position:"), this), GhostX, tr("X:"),
-              {m_positionUnitCombo, m_resetPositionBtn});
-  addGhostRow(2, nullptr, GhostY, tr("Y:"), {});
-  addGhostRow(3, newDragLabel(tr("Rotation:"), GhostRotation), GhostRotation,
-              QString(), {m_resetRotationBtn});
-  addGhostRow(4, new QLabel(tr("Scale:"), this), GhostScaleH, tr("H:"),
-              {m_lockScaleCB, m_resetScaleBtn});
-  addGhostRow(5, nullptr, GhostScaleV, tr("V:"), {});
-  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), 6, 0,
+  int row = 1;
+  // The blank axis only lines the row up with the folded ones
+  m_detailWidgets.push_back(
+      addGhostRow(row++, newDragLabel(tr("Rotation:"), GhostRotation),
+                  GhostRotation, QString(), {m_resetRotationBtn}));
+  editShiftLayout->addWidget(new QLabel(tr("Reset:"), this), row, 0,
                              Qt::AlignRight | Qt::AlignVCenter);
-  editShiftLayout->addLayout(resetLayout, 6, 1, 1, 2);
+  editShiftLayout->addLayout(resetLayout, row++, 1, 1, 2);
   editShiftLayout->setColumnStretch(1, 1);
 
   TPropertyGroup *pg     = m_tool->getProperties(0);
@@ -3373,17 +3398,23 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
     ratioLayout->addWidget(m_snapDenominatorField, 0);
     ratioLayout->addStretch(1);
     editShiftLayout->addWidget(
-        new QLabel(m_snapRatioProp->getQStringName() + ":", this), 7, 0,
+        new QLabel(m_snapRatioProp->getQStringName() + ":", this), row, 0,
         Qt::AlignRight | Qt::AlignVCenter);
-    editShiftLayout->addLayout(ratioLayout, 7, 1, 1, 2);
+    editShiftLayout->addLayout(ratioLayout, row++, 1, 1, 2);
   }
 
-  QList<QCheckBox *> optionBoxes;
+  QHBoxLayout *optionLayout       = new QHBoxLayout;
+  QHBoxLayout *detailOptionLayout = new QHBoxLayout;
+  for (QHBoxLayout *boxLayout : {optionLayout, detailOptionLayout}) {
+    boxLayout->setContentsMargins(0, 0, 0, 0);
+    boxLayout->setSpacing(12);
+  }
   for (int i = 0; i < pg->getPropertyCount(); i++) {
     TBoolProperty *bp = dynamic_cast<TBoolProperty *>(pg->getProperty(i));
     if (!bp) continue;
     ToolOptionCheckbox *cb = new ToolOptionCheckbox(m_tool, bp, toolHandle);
-    optionBoxes.push_back(cb);
+    bool isDetail          = bp->getName() == "Align from Current Positions";
+    (isDetail ? detailOptionLayout : optionLayout)->addWidget(cb, 0);
     m_controls.push_back(cb);
   }
   m_alignmentPerFrameCB =
@@ -3396,15 +3427,35 @@ ShiftTraceSettingsPane::ShiftTraceSettingsPane(QWidget *parent)
   connect(m_alignmentPerFrameCB, &QCheckBox::clicked, this, [](bool checked) {
     setOnionSkinPreference(shiftAndTraceAlignmentPerFrame, checked);
   });
-  optionBoxes.push_back(m_alignmentPerFrameCB);
-  QGridLayout *optionLayout = new QGridLayout;
-  optionLayout->setContentsMargins(0, 0, 0, 0);
-  optionLayout->setHorizontalSpacing(12);
-  optionLayout->setVerticalSpacing(6);
-  for (int i = 0; i < optionBoxes.size(); i++)
-    optionLayout->addWidget(optionBoxes[i], i / 2, i % 2);
-  optionLayout->setColumnStretch(2, 1);
-  editShiftLayout->addLayout(optionLayout, 8, 0, 1, 3);
+  detailOptionLayout->addWidget(m_alignmentPerFrameCB, 0);
+  optionLayout->addStretch(1);
+  detailOptionLayout->addStretch(1);
+  editShiftLayout->addLayout(optionLayout, row++, 0, 1, 3);
+
+  m_detailFoldBtn = newFoldButton(tr("Position, Scale and Other Options"),
+                                  ShiftTraceShowDetails);
+  editShiftLayout->addWidget(m_detailFoldBtn, row++, 0, 1, 3, Qt::AlignLeft);
+  // The folded rows stay in the grid to keep its columns aligned
+  int firstDetailItem = editShiftLayout->count();
+  addGhostRow(row++, new QLabel(tr("Position:"), this), GhostX, tr("X:"),
+              {m_positionUnitCombo, m_resetPositionBtn});
+  addGhostRow(row++, nullptr, GhostY, tr("Y:"), {});
+  addGhostRow(row++, new QLabel(tr("Scale:"), this), GhostScaleH, tr("H:"),
+              {m_lockScaleCB, m_resetScaleBtn});
+  addGhostRow(row++, nullptr, GhostScaleV, tr("V:"), {});
+  editShiftLayout->addLayout(detailOptionLayout, row++, 0, 1, 3);
+  for (int i = firstDetailItem; i < editShiftLayout->count(); i++)
+    collectWidgets(editShiftLayout->itemAt(i), m_detailWidgets);
+
+  // The fields are created in another order than the rows show them in
+  QWidget *previous = m_ghostFields[GhostRotation];
+  for (QWidget *next : std::initializer_list<QWidget *>{
+           m_snapDenominatorField, m_ghostFields[GhostX], m_ghostFields[GhostY],
+           m_ghostFields[GhostScaleH], m_ghostFields[GhostScaleV]}) {
+    if (!next) continue;
+    setTabOrder(previous, next);
+    previous = next;
+  }
 
   QAction *editShiftAction = cm->getAction(MI_EditShift);
   QGroupBox *editShiftBox  = new QGroupBox(editShiftAction->text(), this);
@@ -3437,6 +3488,7 @@ void ShiftTraceSettingsPane::showEvent(QShowEvent *) {
   updatePositionUnit();
   updateGhostFields();
   m_lockScaleCB->setChecked(ShiftTraceLockScaleRatio);
+  updateFolds();
 
   ToolHandle *currTool = TTool::getApplication()->getCurrentTool();
   currTool->disconnect(this);
@@ -3507,6 +3559,16 @@ void ShiftTraceSettingsPane::updateStatus() {
 
 void ShiftTraceSettingsPane::commitTypedValue() {
   if (QWidget *field = focusWidget()) field->clearFocus();
+}
+
+//-----------------------------------------------------------------------------
+
+void ShiftTraceSettingsPane::updateFolds() {
+  bool showDisplay = ShiftTraceShowDisplay, showDetails = ShiftTraceShowDetails;
+  m_displayFoldBtn->setArrowType(showDisplay ? Qt::DownArrow : Qt::RightArrow);
+  m_displayContents->setVisible(showDisplay);
+  m_detailFoldBtn->setArrowType(showDetails ? Qt::DownArrow : Qt::RightArrow);
+  for (QWidget *widget : m_detailWidgets) widget->setVisible(showDetails);
 }
 
 //-----------------------------------------------------------------------------

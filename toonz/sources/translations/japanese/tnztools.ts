@@ -1780,6 +1780,10 @@ Do you want to proceed?</source>
         <source>Each frame keeps the positions of the drawings and the trajectory, which come back when returning to the frame or turning Edit Shift on again</source>
         <translation>コマの位置と軌道をフレームごとに保持し、そのフレームに戻ったときや「オフセット位置を変更」を再度オンにしたときに復元します</translation>
     </message>
+    <message>
+        <source>Position, Scale and Other Options</source>
+        <translation>位置・拡大率・その他のオプション</translation>
+    </message>
 </context>
 <context>
     <name>ShiftTraceToolOptionBox</name>

@@ -361,6 +361,7 @@ public:
   void restoreFloatingPanelState() override;
 
 protected:
+  bool eventFilter(QObject *, QEvent *) override;
   void showEvent(QShowEvent *) override;
 };
 
