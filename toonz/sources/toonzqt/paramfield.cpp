@@ -12,17 +12,23 @@
 #include "toonzqt/menubarcommand.h"
 
 #include "tdoubleparam.h"
+#include "tdoublekeyframe.h"
 #include "tnotanimatableparam.h"
 #include "tparamset.h"
+#include "tpixelutils.h"
 #include "tw/stringtable.h"
 
 #include <QString>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPainter>
 #include <QComboBox>
 #include <QFontComboBox>
 #include <QKeyEvent>
+#include <QSignalBlocker>
+#include <algorithm>
+#include <cmath>
 
 using namespace DVGui;
 
@@ -99,6 +105,30 @@ public:
   }
 };
 
+// Discrete controls must restore the entire curve when deleting a key: the
+// previous interpolation, key metadata and default value are all significant.
+class AnimatedChoiceParamUndo final : public AnimatableFxSettingsUndo {
+  TDoubleParamP m_param, m_before, m_after;
+
+public:
+  AnimatedChoiceParamUndo(const TDoubleParamP &param, QString name, int frame,
+                          TFxHandle *handle)
+      : AnimatableFxSettingsUndo(name, frame, handle)
+      , m_param(param)
+      , m_before(TParamP(param->clone())) {
+    m_wasKeyframe = param->isKeyframe(frame);
+  }
+  void onAdd() override { m_after = TParamP(m_param->clone()); }
+  void undo() const override {
+    m_param->copy(m_before.getPointer());
+    if (m_fxHandle) m_fxHandle->notifyFxChanged();
+  }
+  void redo() const override {
+    m_param->copy(m_after.getPointer());
+    if (m_fxHandle) m_fxHandle->notifyFxChanged();
+  }
+};
+
 //-----------------------------------------------------------------------------
 /*! RangeParamField Undo
  */
@@ -171,6 +201,30 @@ public:
       m_param->setDefaultValue(m_newValue);
     else
       m_param->setValue(m_frame, m_newValue);
+    if (m_fxHandle) m_fxHandle->notifyFxChanged();
+  }
+};
+
+// A precision-sensitive color control must preserve the complete curves,
+// including interpolation and values finer than the color picker's swatch.
+class PrecisePixelParamUndo final : public AnimatableFxSettingsUndo {
+  TPixelParamP m_param, m_before, m_after;
+
+public:
+  PrecisePixelParamUndo(const TPixelParamP &param, QString name, int frame,
+                        TFxHandle *handle)
+      : AnimatableFxSettingsUndo(name, frame, handle)
+      , m_param(param)
+      , m_before(TParamP(param->clone())) {
+    m_wasKeyframe = param->isKeyframe(frame);
+  }
+  void onAdd() override { m_after = TParamP(m_param->clone()); }
+  void undo() const override {
+    m_param->copy(m_before.getPointer());
+    if (m_fxHandle) m_fxHandle->notifyFxChanged();
+  }
+  void redo() const override {
+    m_param->copy(m_after.getPointer());
     if (m_fxHandle) m_fxHandle->notifyFxChanged();
   }
 };
@@ -350,6 +404,100 @@ public:
     if (m_fxHandle) m_fxHandle->notifyFxChanged();
   }
 };
+
+// Other undo commands retain live channel pointers. Keep the original stops as
+// well as cloned values so structural history can reattach removed stops.
+class PreciseSpectrumParamUndo final : public AnimatableFxSettingsUndo {
+  struct State {
+    TSpectrumParamP values;
+    std::vector<std::pair<TDoubleParamP, TPixelParamP>> keys;
+  };
+  TSpectrumParamP m_actual;
+  State m_before, m_after;
+
+  static State capture(const TSpectrumParamP &param) {
+    State state{TParamP(param->clone()), {}};
+    for (int i = 0; i < param->getKeyCount(); ++i)
+      state.keys.emplace_back(param->getPosition(i), param->getColor(i));
+    return state;
+  }
+
+  void restore(const State &state) const {
+    for (int i = 0; i < state.values->getKeyCount(); ++i) {
+      state.keys[i].first->copy(state.values->getPosition(i).getPointer());
+      state.keys[i].second->copy(state.values->getColor(i).getPointer());
+    }
+    m_actual->setKeyParams(state.keys);
+    if (m_fxHandle) m_fxHandle->notifyFxChanged();
+  }
+
+public:
+  PreciseSpectrumParamUndo(const TSpectrumParamP &actual, QString name,
+                           int frame, TFxHandle *handle)
+      : AnimatableFxSettingsUndo(name, frame, handle)
+      , m_actual(actual)
+      , m_before(capture(actual)) {
+    m_wasKeyframe = actual->isKeyframe(frame);
+  }
+  void onAdd() override { m_after = capture(m_actual); }
+  void undo() const override { restore(m_before); }
+  void redo() const override { restore(m_after); }
+};
+
+static std::array<TDoubleParamP, 4> pixelChannels(const TPixelParamP &color) {
+  return {color->getRed(), color->getGreen(), color->getBlue(),
+          color->getMatte()};
+}
+
+static TPixelD samplePreciseSpectrum(const TSpectrumParamP &param, int frame,
+                                     double position) {
+  std::vector<std::pair<double, TPixelD>> keys;
+  for (int i = 0; i < param->getKeyCount(); ++i)
+    keys.emplace_back(param->getPosition(i)->getValue(frame),
+                      param->getColor(i)->getValueD(frame));
+  if (keys.empty()) return TPixelD();
+  std::sort(keys.begin(), keys.end());
+  auto right = std::lower_bound(keys.begin(), keys.end(), position,
+                                [](const std::pair<double, TPixelD> &key,
+                                   double s) { return key.first < s; });
+  if (right == keys.end()) return keys.back().second;
+  if (right == keys.begin() || right->first == position) return right->second;
+  const auto &left    = *(right - 1);
+  const double weight = (position - left.first) / (right->first - left.first);
+  const TPixelD a = left.second, b = right->second;
+  return TPixelD(
+      (1 - weight) * a.r + weight * b.r, (1 - weight) * a.g + weight * b.g,
+      (1 - weight) * a.b + weight * b.b, (1 - weight) * a.m + weight * b.m);
+}
+
+static bool preciseSpectraEqual(const TSpectrumParamP &a,
+                                const TSpectrumParamP &b, int frame) {
+  if (a->getKeyCount() != b->getKeyCount()) return false;
+  for (int i = 0; i < a->getKeyCount(); ++i)
+    if (a->getPosition(i)->getValue(frame) !=
+            b->getPosition(i)->getValue(frame) ||
+        a->getColor(i)->getValueD(frame) != b->getColor(i)->getValueD(frame))
+      return false;
+  return true;
+}
+
+// The native swatch is 8-bit. Clamp only its display copy before converting;
+// the animated double values remain unchanged, including HDR values.
+static TSpectrum preciseSpectrumDisplay(const TSpectrumParamP &param,
+                                        int frame) {
+  std::vector<TSpectrum::ColorKey> keys;
+  auto unit = [](double value) {
+    return std::isfinite(value) ? std::max(0.0, std::min(1.0, value)) : 0.0;
+  };
+  for (int i = 0; i < param->getKeyCount(); ++i) {
+    const TPixelD c = param->getColor(i)->getValueD(frame);
+    keys.emplace_back(
+        unit(param->getPosition(i)->getValue(frame)),
+        toPixel32(TPixelD(unit(c.r), unit(c.g), unit(c.b), unit(c.m))));
+  }
+  if (keys.empty()) return TSpectrum(TPixel32::Black, TPixel32::Black);
+  return TSpectrum(int(keys.size()), keys.data());
+}
 
 //-----------------------------------------------------------------------------
 /*! SpectrumParamField Undo
@@ -785,19 +933,23 @@ MeasuredDoubleParamField::MeasuredDoubleParamField(QWidget *parent,
     : AnimatedParamField<double, TDoubleParamP>(parent, name, param) {
   QString str;
   m_paramName = str.fromStdString(param->getName());
+  m_actualParam = param;
 
   m_measuredDoubleField = new MeasuredDoubleField(this, false);
 
   m_measuredDoubleField->setSizePolicy(QSizePolicy::Expanding,
                                        QSizePolicy::Minimum);
   m_measuredDoubleField->setMeasure(param->getMeasureName());
-  m_measuredDoubleField->setValue(param->getValue(m_frame));
   m_measuredDoubleField->setDecimals(3);
 
   double min = 0, max = 100, step = 1;
   param->getValueRange(min, max, step);
   assert(min < max);
   m_measuredDoubleField->setRange(min, max);
+  if (param->getUISliderRange(min, max) &&
+      !m_measuredDoubleField->setSliderRange(min, max))
+    m_measuredDoubleField->enableSlider(false);
+  m_measuredDoubleField->setValue(param->getValue(m_frame));
 
   //----layout
   m_layout->addWidget(m_keyToggle);
@@ -821,7 +973,7 @@ void MeasuredDoubleParamField::updateField(double value) {
 //-----------------------------------------------------------------------------
 
 void MeasuredDoubleParamField::onChange(bool dragging) {
-  if (dragging) return;
+  if (dragging || !m_currentParam || !m_actualParam) return;
 
   TDoubleParamP doubleParam = m_actualParam;
 
@@ -850,11 +1002,19 @@ void MeasuredDoubleParamField::onKeyToggled() { onKeyToggle(); }
 //-----------------------------------------------------------------------------
 
 void MeasuredDoubleParamField::setPrecision(int precision) {
-  double min, max;
+  double min, max, sliderMin, sliderMax;
+  const bool hasSliderRange =
+      m_actualParam && m_actualParam->getUISliderRange(sliderMin, sliderMax);
+  const double value = m_measuredDoubleField->getValue();
+  const QSignalBlocker blocker(m_measuredDoubleField);
   m_measuredDoubleField->getRange(min, max);
   m_measuredDoubleField->setDecimals(precision);
   // update slider
   m_measuredDoubleField->setRange(min, max);
+  if (hasSliderRange &&
+      !m_measuredDoubleField->setSliderRange(sliderMin, sliderMax))
+    m_measuredDoubleField->enableSlider(false);
+  m_measuredDoubleField->setValue(value);
 }
 
 //=============================================================================
@@ -1071,6 +1231,54 @@ PixelParamField::PixelParamField(QWidget *parent, QString name,
 
 //-----------------------------------------------------------------------------
 
+PixelParamField::~PixelParamField() { observeChannels(false); }
+
+void PixelParamField::observeChannels(bool observe) {
+  std::array<TDoubleParamP, 4> channels;
+  if (observe && m_actualParam)
+    channels = {m_actualParam->getRed(), m_actualParam->getGreen(),
+                m_actualParam->getBlue(), m_actualParam->getMatte()};
+  if (m_observedChannels == channels) return;
+  for (const auto &channel : m_observedChannels)
+    if (channel) channel->removeObserver(this);
+  m_observedChannels = channels;
+  for (const auto &channel : m_observedChannels)
+    if (channel) channel->addObserver(this);
+  m_previewNeedsSync = false;
+}
+
+void PixelParamField::setParam(const TParamP &current, const TParamP &actual,
+                               int frame) {
+  m_actualParam  = actual;
+  m_currentParam = current;
+  assert(m_currentParam && m_actualParam);
+  observeChannels(property("preserveColorPrecision").toBool());
+  update(frame);
+}
+
+void PixelParamField::update(int frame) {
+  if (!property("preserveColorPrecision").toBool()) {
+    AnimatedParamField<TPixel32, TPixelParamP>::update(frame);
+    return;
+  }
+  m_frame = frame;
+  if (!m_currentParam || !m_actualParam) return;
+  // Child curve notifications only mark the preview dirty. Copy after the
+  // complete edit or history operation, preserving uncommitted preview edits
+  // during ordinary refreshes between keys.
+  const bool committedChange = m_previewNeedsSync;
+  m_previewNeedsSync         = false;
+  if (m_currentParam != m_actualParam &&
+      (committedChange || m_actualParam->isKeyframe(frame) ||
+       !m_actualParam->hasKeyframes()))
+    m_currentParam->copy(m_actualParam.getPointer());
+  updateField(m_currentParam->getValue(frame));
+  m_keyToggle->setStatus(
+      m_actualParam->hasKeyframes(), m_actualParam->isKeyframe(frame),
+      m_actualParam->getValueD(frame) != m_currentParam->getValueD(frame));
+  if (committedChange) emit currentParamChanged();
+}
+
 void PixelParamField::updateField(TPixel32 value) {
   m_colorField->setColor(value);
 }
@@ -1079,6 +1287,37 @@ void PixelParamField::updateField(TPixel32 value) {
 
 void PixelParamField::onChange(const TPixel32 &value, bool isDragging) {
   if (isDragging) return;
+
+  if (property("preserveColorPrecision").toBool()) {
+    if (!m_actualParam || !m_currentParam) return;
+    const TPixel32 previous = m_currentParam->getValue(m_frame);
+    if (previous == value) return;
+    const bool hasKeys = m_actualParam->hasKeyframes();
+    const bool commit  = m_actualParam->isKeyframe(m_frame) || !hasKeys;
+    TUndo *undo =
+        commit ? new PrecisePixelParamUndo(m_actualParam, m_interfaceName,
+                                           m_frame, ParamField::m_fxHandleStat)
+               : nullptr;
+    const UCHAR before[] = {previous.r, previous.g, previous.b, previous.m};
+    const UCHAR after[]  = {value.r, value.g, value.b, value.m};
+    const TPixelParamP target      = commit ? m_actualParam : m_currentParam;
+    const TDoubleParamP channels[] = {target->getRed(), target->getGreen(),
+                                      target->getBlue(), target->getMatte()};
+    for (int channel = 0; channel < 4; ++channel) {
+      if (before[channel] == after[channel]) continue;
+      if (hasKeys)
+        channels[channel]->setValue(m_frame, after[channel] / 255.0);
+      else
+        channels[channel]->setDefaultValue(after[channel] / 255.0);
+    }
+    if (undo) TUndoManager::manager()->add(undo);
+    update(m_frame);
+    if (commit)
+      emit actualParamChanged();
+    else
+      emit currentParamChanged();
+    return;
+  }
 
   TPixelParamP pixelParam = m_actualParam;
 
@@ -1101,7 +1340,23 @@ void PixelParamField::onChange(const TPixel32 &value, bool isDragging) {
 
 //-----------------------------------------------------------------------------
 
-void PixelParamField::onKeyToggled() { onKeyToggle(); }
+void PixelParamField::onKeyToggled() {
+  if (!property("preserveColorPrecision").toBool()) {
+    onKeyToggle();
+    return;
+  }
+  if (!m_actualParam || !m_currentParam) return;
+  TUndo *undo = new PrecisePixelParamUndo(m_actualParam, m_interfaceName,
+                                          m_frame, ParamField::m_fxHandleStat);
+  if (m_keyToggle->getStatus() == ParamFieldKeyToggle::KEYFRAME)
+    m_actualParam->deleteKeyframe(m_frame);
+  else
+    m_actualParam->setValueD(m_frame, m_currentParam->getValueD(m_frame));
+  TUndoManager::manager()->add(undo);
+  update(m_frame);
+  emit actualParamChanged();
+  emit paramKeyToggle();
+}
 
 //-----------------------------------------------------------------------------
 
@@ -1208,6 +1463,193 @@ SpectrumParamField::SpectrumParamField(QWidget *parent, QString name,
 
 //-----------------------------------------------------------------------------
 
+SpectrumParamField::~SpectrumParamField() { observeParam(false); }
+
+void SpectrumParamField::observeParam(bool observe) {
+  const TSpectrumParamP param = observe ? m_actualParam : TSpectrumParamP();
+  if (m_observedParam != param) {
+    if (m_observedParam) m_observedParam->removeObserver(this);
+    m_observedParam = param;
+    if (m_observedParam) m_observedParam->addObserver(this);
+  }
+  observeCurves(param);
+}
+
+void SpectrumParamField::observeCurves(const TSpectrumParamP &param) {
+  std::vector<TDoubleParamP> curves;
+  if (param) {
+    for (int i = 0; i < param->getKeyCount(); ++i) {
+      curves.push_back(param->getPosition(i));
+      for (const auto &channel : pixelChannels(param->getColor(i)))
+        curves.push_back(channel);
+    }
+  }
+  if (m_observedCurves == curves) return;
+  if (param) m_previewNeedsSync = true;
+  for (const auto &curve : m_observedCurves) curve->removeObserver(this);
+  m_observedCurves = curves;
+  for (const auto &curve : m_observedCurves) curve->addObserver(this);
+}
+
+void SpectrumParamField::setParam(const TParamP &current, const TParamP &actual,
+                                  int frame) {
+  if (m_currentParam != TSpectrumParamP(current) ||
+      m_actualParam != TSpectrumParamP(actual) || m_frame != frame) {
+    cancelPreciseEdit();
+    m_previewNeedsSync = true;
+  }
+  m_currentParam = current;
+  m_actualParam  = actual;
+  assert(m_currentParam && m_actualParam);
+  observeParam(property("preserveColorPrecision").toBool());
+  update(frame);
+}
+
+void SpectrumParamField::update(int frame) {
+  if (!property("preserveColorPrecision").toBool()) {
+    AnimatedParamField<TSpectrum, TSpectrumParamP>::update(frame);
+    return;
+  }
+  if (m_frame != frame) {
+    cancelPreciseEdit();
+    m_previewNeedsSync = true;
+  }
+  m_frame = frame;
+  if (!m_actualParam || !m_currentParam) return;
+  observeParam(true);
+  ensurePreciseEditor();
+  const bool committedChange = syncPrecisePreview();
+  updateField(preciseSpectrumDisplay(m_currentParam, frame));
+  refreshPreciseEditor();
+  m_keyToggle->setStatus(
+      m_actualParam->hasKeyframes(), m_actualParam->isKeyframe(frame),
+      !preciseSpectraEqual(m_actualParam, m_currentParam, frame));
+  if (committedChange) emit currentParamChanged();
+}
+
+bool SpectrumParamField::syncPrecisePreview() {
+  const bool committedChange = m_previewNeedsSync;
+  m_previewNeedsSync         = false;
+  if (committedChange) cancelPreciseEdit();
+  if (committedChange &&
+      m_currentParam.getPointer() != m_actualParam.getPointer())
+    m_currentParam->copy(m_actualParam.getPointer());
+  return committedChange;
+}
+
+void SpectrumParamField::ensurePreciseEditor() {
+  if (m_preciseChannels[0]) return;
+  auto *column = new QVBoxLayout();
+  column->setContentsMargins(0, 0, 0, 0);
+  column->setSpacing(2);
+  m_layout->removeWidget(m_spectrumField);
+  column->addWidget(m_spectrumField);
+  auto *row = new QHBoxLayout();
+  row->setContentsMargins(0, 0, 0, 0);
+  const char *labels[] = {"R", "G", "B", "A"};
+  const char *names[]  = {"spectrumPreciseRed", "spectrumPreciseGreen",
+                          "spectrumPreciseBlue", "spectrumPreciseAlpha"};
+  for (int i = 0; i < 4; ++i) {
+    row->addWidget(new QLabel(QString::fromLatin1(labels[i]), this));
+    auto *field = new QLineEdit(this);
+    field->setObjectName(QString::fromLatin1(names[i]));
+    field->setAccessibleName(
+        tr("Precise %1 channel").arg(QString::fromLatin1(labels[i])));
+    field->setMinimumWidth(55);
+    m_preciseChannels[i] = field;
+    row->addWidget(field);
+    connect(field, &QLineEdit::editingFinished, this,
+            [this, i]() { commitPreciseChannel(i); });
+  }
+  column->addLayout(row);
+  m_layout->addLayout(column);
+  if (auto *bar = m_spectrumField->findChild<DVGui::SpectrumBar *>()) {
+    bar->setFocusPolicy(Qt::StrongFocus);
+    connect(bar, &DVGui::SpectrumBar::currentKeyChanged, this,
+            [this]() { refreshPreciseEditor(); });
+  }
+}
+
+void SpectrumParamField::cancelPreciseEdit() {
+  if (!m_preciseChannels[0]) return;
+  for (QLineEdit *field : m_preciseChannels) {
+    const QSignalBlocker blocker(field);
+    field->clearFocus();
+  }
+}
+
+void SpectrumParamField::refreshPreciseEditor() {
+  if (!m_preciseChannels[0]) return;
+  const int index = m_spectrumField->getCurrentKeyIndex();
+  if (index != m_preciseStopIndex) {
+    cancelPreciseEdit();
+    m_preciseStopIndex = index;
+  }
+  const bool valid = hasPreciseStop(index);
+  const TPixelD color =
+      valid ? m_currentParam->getColor(index)->getValueD(m_frame) : TPixelD();
+  const double values[] = {color.r, color.g, color.b, color.m};
+  for (int i = 0; i < 4; ++i) {
+    m_preciseChannels[i]->setEnabled(valid);
+    if (!m_preciseChannels[i]->hasFocus())
+      m_preciseChannels[i]->setText(valid ? QString::number(values[i], 'g', 17)
+                                          : QString());
+  }
+}
+
+bool SpectrumParamField::hasPreciseStop(int index) const {
+  return m_currentParam && index >= 0 && index < m_currentParam->getKeyCount();
+}
+
+bool SpectrumParamField::hasPreciseTarget(int channel) const {
+  if (!m_actualParam || channel < 0 || channel >= 4) return false;
+  const int index = m_spectrumField->getCurrentKeyIndex();
+  return index == m_preciseStopIndex && hasPreciseStop(index);
+}
+
+bool SpectrumParamField::readPreciseChannel(int channel, double &value) {
+  bool ok = false;
+  value   = m_preciseChannels[channel]->text().toDouble(&ok);
+  if (!ok || !std::isfinite(value) ||
+      (channel == 3 && (value < 0 || value > 1))) {
+    const QSignalBlocker blocker(m_preciseChannels[channel]);
+    m_preciseChannels[channel]->clearFocus();
+    refreshPreciseEditor();
+    return false;
+  }
+  return true;
+}
+
+void SpectrumParamField::commitPreciseChannel(int channel) {
+  if (!hasPreciseTarget(channel)) return;
+  double value;
+  if (!readPreciseChannel(channel, value)) return;
+  const int index = m_spectrumField->getCurrentKeyIndex();
+  if (pixelChannels(m_currentParam->getColor(index))[channel]->getValue(
+          m_frame) == value)
+    return;
+  const bool hasKeys = m_actualParam->hasKeyframes();
+  const bool commit  = m_actualParam->isKeyframe(m_frame) || !hasKeys;
+  TUndo *undo =
+      commit ? new PreciseSpectrumParamUndo(m_actualParam, m_interfaceName,
+                                            m_frame, ParamField::m_fxHandleStat)
+             : nullptr;
+  setPreciseChannel(index, channel, value);
+  finishPreciseEdit(undo);
+}
+
+void SpectrumParamField::setPreciseChannel(int stop, int channel,
+                                           double value) {
+  const bool hasKeys           = m_actualParam->hasKeyframes();
+  const bool commit            = m_actualParam->isKeyframe(m_frame) || !hasKeys;
+  const TSpectrumParamP target = commit ? m_actualParam : m_currentParam;
+  const auto channels          = pixelChannels(target->getColor(stop));
+  if (hasKeys)
+    channels[channel]->setValue(m_frame, value);
+  else
+    channels[channel]->setDefaultValue(value);
+}
+
 void SpectrumParamField::updateField(TSpectrum value) {
   if (m_spectrumField->getSpectrum() == value) return;
   m_spectrumField->setSpectrum(value);
@@ -1235,12 +1677,39 @@ void SpectrumParamField::setParams() {
 
 //-----------------------------------------------------------------------------
 
-void SpectrumParamField::onKeyToggled() { onKeyToggle(); }
+void SpectrumParamField::onKeyToggled() {
+  if (!property("preserveColorPrecision").toBool()) {
+    onKeyToggle();
+    return;
+  }
+  if (!m_actualParam || !m_currentParam) return;
+  TUndo *undo = new PreciseSpectrumParamUndo(
+      m_actualParam, m_interfaceName, m_frame, ParamField::m_fxHandleStat);
+  if (m_keyToggle->getStatus() == ParamFieldKeyToggle::KEYFRAME) {
+    m_actualParam->deleteKeyframe(m_frame);
+  } else {
+    for (int i = 0; i < m_actualParam->getKeyCount(); ++i) {
+      m_actualParam->getPosition(i)->setValue(
+          m_frame, m_currentParam->getPosition(i)->getValue(m_frame));
+      m_actualParam->getColor(i)->setValueD(
+          m_frame, m_currentParam->getColor(i)->getValueD(m_frame));
+    }
+  }
+  TUndoManager::manager()->add(undo);
+  update(m_frame);
+  emit actualParamChanged();
+  emit paramKeyToggle();
+}
 
 //-----------------------------------------------------------------------------
 
 void SpectrumParamField::onChange(bool isDragging) {
   if (isDragging) return;
+
+  if (property("preserveColorPrecision").toBool()) {
+    onPreciseChange();
+    return;
+  }
 
   TSpectrumParamP spectrumParam = m_actualParam;
   TUndo *undo                   = 0;
@@ -1258,8 +1727,83 @@ void SpectrumParamField::onChange(bool isDragging) {
 
 //-----------------------------------------------------------------------------
 
+void SpectrumParamField::onPreciseChange() {
+  if (!m_actualParam || !m_currentParam) return;
+  const TSpectrum edited = m_spectrumField->getSpectrum();
+  const TSpectrum before = preciseSpectrumDisplay(m_currentParam, m_frame);
+  if (edited == before || edited.getKeyCount() != m_currentParam->getKeyCount())
+    return;
+  const bool commit =
+      m_actualParam->isKeyframe(m_frame) || !m_actualParam->hasKeyframes();
+  TUndo *undo =
+      commit ? new PreciseSpectrumParamUndo(m_actualParam, m_interfaceName,
+                                            m_frame, ParamField::m_fxHandleStat)
+             : nullptr;
+  for (int i = 0; i < edited.getKeyCount(); ++i)
+    applyPreciseStopChange(i, before.getKey(i), edited.getKey(i));
+  finishPreciseEdit(undo);
+}
+
+void SpectrumParamField::finishPreciseEdit(TUndo *undo) {
+  if (undo) TUndoManager::manager()->add(undo);
+  update(m_frame);
+  if (undo)
+    emit actualParamChanged();
+  else
+    emit currentParamChanged();
+}
+
+//-----------------------------------------------------------------------------
+
+void SpectrumParamField::applyPreciseStopChange(int index,
+                                                const TSpectrum::Key &before,
+                                                const TSpectrum::Key &after) {
+  const bool hasKeys           = m_actualParam->hasKeyframes();
+  const bool commit            = m_actualParam->isKeyframe(m_frame) || !hasKeys;
+  const TSpectrumParamP target = commit ? m_actualParam : m_currentParam;
+  if (before.first != after.first) {
+    if (hasKeys)
+      target->getPosition(index)->setValue(m_frame, after.first);
+    else
+      target->getPosition(index)->setDefaultValue(after.first);
+  }
+  const UCHAR beforeChannels[] = {before.second.r, before.second.g,
+                                  before.second.b, before.second.m};
+  const UCHAR afterChannels[] = {after.second.r, after.second.g, after.second.b,
+                                 after.second.m};
+  for (int channel = 0; channel < 4; ++channel)
+    if (beforeChannels[channel] != afterChannels[channel])
+      setPreciseChannel(index, channel, afterChannels[channel] / 255.0);
+}
+
+//-----------------------------------------------------------------------------
+
 void SpectrumParamField::onKeyAdded(int keyIndex) {
   TSpectrum::ColorKey key = m_spectrumField->getSpectrum().getKey(keyIndex);
+
+  if (property("preserveColorPrecision").toBool()) {
+    if (!m_actualParam || !m_currentParam) return;
+    TUndo *undo = new PreciseSpectrumParamUndo(
+        m_actualParam, m_interfaceName, m_frame, ParamField::m_fxHandleStat);
+    const TPixelD color =
+        samplePreciseSpectrum(m_currentParam, m_frame, key.first);
+    m_actualParam->addKey(key.first, TPixel32::Black);
+    const auto channels   = pixelChannels(m_actualParam->getColor(keyIndex));
+    const double values[] = {color.r, color.g, color.b, color.m};
+    for (int channel = 0; channel < 4; ++channel)
+      channels[channel]->setDefaultValue(values[channel]);
+    if (m_currentParam != m_actualParam) {
+      m_currentParam->addKey(key.first, TPixel32::Black);
+      m_currentParam->getColor(keyIndex)->copy(
+          m_actualParam->getColor(keyIndex).getPointer());
+    }
+    observeParam(true);
+    // Both ramps now have the new stop; keep surviving preview edits intact.
+    m_previewNeedsSync = false;
+    finishPreciseEdit(undo);
+    emit currentParamChanged();
+    return;
+  }
 
   TSpectrumParamP actualSpectrumParam = m_actualParam;
   assert(actualSpectrumParam);
@@ -1277,6 +1821,19 @@ void SpectrumParamField::onKeyAdded(int keyIndex) {
 //-----------------------------------------------------------------------------
 
 void SpectrumParamField::onKeyRemoved(int keyIndex) {
+  if (property("preserveColorPrecision").toBool()) {
+    if (!m_actualParam || !m_currentParam) return;
+    TUndo *undo = new PreciseSpectrumParamUndo(
+        m_actualParam, m_interfaceName, m_frame, ParamField::m_fxHandleStat);
+    m_actualParam->removeKey(keyIndex);
+    if (m_currentParam != m_actualParam) m_currentParam->removeKey(keyIndex);
+    observeParam(true);
+    // Both ramps now have the same survivors, including any pending edits.
+    m_previewNeedsSync = false;
+    finishPreciseEdit(undo);
+    emit currentParamChanged();
+    return;
+  }
   TUndo *undo                          = 0;
   TSpectrumParamP actualSpectrumParam  = m_actualParam;
   TSpectrumParamP currentSpectrumParam = m_currentParam;
@@ -1294,6 +1851,149 @@ void SpectrumParamField::onKeyRemoved(int keyIndex) {
   setParams();
 
   if (undo) TUndoManager::manager()->add(undo);
+}
+
+//=============================================================================
+// AnimatedChoiceParamField
+//-----------------------------------------------------------------------------
+
+AnimatedChoiceParamField::AnimatedChoiceParamField(QWidget *parent,
+                                                   QString name,
+                                                   const TDoubleParamP &param)
+    : ModeChangerParamField(parent, name, param)
+    , m_keyToggle(new ParamFieldKeyToggle(this))
+    , m_choiceCount(int(param->getUIChoices().size())) {
+  m_paramName = QString::fromStdString(param->getName());
+  m_layout->addWidget(m_keyToggle);
+  if (param->isUICheckbox()) {
+    m_checkBox = new CheckBox("", this);
+    m_checkBox->setObjectName("animatedCheckbox");
+    m_checkBox->setAccessibleName(m_interfaceName);
+    m_layout->addWidget(m_checkBox);
+    m_layout->addStretch();
+    connect(m_checkBox, &QCheckBox::clicked, this,
+            [this](bool checked) { onChoiceChanged(checked ? 1 : 0); });
+  } else {
+    m_choices = new QComboBox(this);
+    m_choices->setObjectName("animatedChoice");
+    m_choices->setAccessibleName(m_interfaceName);
+    for (const std::string &choice : param->getUIChoices())
+      m_choices->addItem(QString::fromStdString(choice));
+    m_layout->addWidget(m_choices);
+    connect(m_choices, QOverload<int>::of(&QComboBox::activated), this,
+            &AnimatedChoiceParamField::onChoiceChanged);
+  }
+  connect(m_keyToggle, &ParamFieldKeyToggle::keyToggled, this,
+          &AnimatedChoiceParamField::onKeyToggled);
+  updateWidgets(choiceIndex(param->getValue(0)));
+}
+
+AnimatedChoiceParamField::~AnimatedChoiceParamField() {
+  if (m_actualParam) m_actualParam->removeObserver(this);
+}
+
+int AnimatedChoiceParamField::choiceIndex(double value) const {
+  if (!std::isfinite(value)) return 0;
+  const double bounded =
+      std::max(0.0, std::min(double(m_choiceCount - 1), value));
+  return int(std::floor(bounded + 0.5));
+}
+
+void AnimatedChoiceParamField::updateWidgets(int value) {
+  if (m_checkBox) {
+    const QSignalBlocker blocker(m_checkBox);
+    m_checkBox->setChecked(value != 0);
+  } else {
+    const QSignalBlocker blocker(m_choices);
+    m_choices->setCurrentIndex(value);
+  }
+}
+
+void AnimatedChoiceParamField::updateKeyToggle() {
+  m_keyToggle->setStatus(m_actualParam->hasKeyframes(),
+                         m_actualParam->isKeyframe(m_frame),
+                         choiceIndex(m_actualParam->getValue(m_frame)) !=
+                             choiceIndex(m_currentParam->getValue(m_frame)));
+}
+
+void AnimatedChoiceParamField::setParam(const TParamP &current,
+                                        const TParamP &actual, int frame) {
+  m_currentParam            = current;
+  TDoubleParamP actualParam = actual;
+  assert(m_currentParam && actualParam);
+  if (m_actualParam != actualParam) {
+    if (m_actualParam) m_actualParam->removeObserver(this);
+    m_actualParam = actualParam;
+    if (m_actualParam) m_actualParam->addObserver(this);
+    m_previewNeedsSync = false;
+  }
+  update(frame);
+}
+
+void AnimatedChoiceParamField::update(int frame) {
+  m_frame = frame;
+  if (!m_currentParam || !m_actualParam) return;
+  // Committed edits, including undo/redo, invalidate the preview curve.
+  // Ordinary refreshes between keys must preserve uncommitted preview edits.
+  const bool committedChange = m_previewNeedsSync;
+  m_previewNeedsSync         = false;
+  if (m_currentParam != m_actualParam &&
+      (committedChange || m_actualParam->isKeyframe(frame) ||
+       !m_actualParam->hasKeyframes()))
+    m_currentParam->copy(m_actualParam.getPointer());
+  const int value = choiceIndex(m_currentParam->getValue(frame));
+  updateWidgets(value);
+  updateKeyToggle();
+  emit modeChanged(value);
+  if (committedChange) emit currentParamChanged();
+}
+
+void AnimatedChoiceParamField::onChoiceChanged(int value) {
+  if (!m_currentParam || !m_actualParam) return;
+  value = choiceIndex(value);
+  if (choiceIndex(m_currentParam->getValue(m_frame)) == value) return;
+
+  const bool hasKeys = m_actualParam->hasKeyframes();
+  if (hasKeys && !m_actualParam->isKeyframe(m_frame)) {
+    // Match native numeric fields: between keys, preview until keyed.
+    TDoubleKeyframe key(m_frame, value);
+    key.m_type = TDoubleKeyframe::Constant;
+    m_currentParam->setKeyframe(key);
+    update(m_frame);
+    emit currentParamChanged();
+    return;
+  }
+
+  auto *undo = new AnimatedChoiceParamUndo(m_actualParam, m_interfaceName,
+                                           m_frame, m_fxHandleStat);
+  if (hasKeys)
+    m_actualParam->setValue(m_frame, value);
+  else
+    m_actualParam->setDefaultValue(value);
+  TUndoManager::manager()->add(undo);
+  update(m_frame);
+  emit actualParamChanged();
+}
+
+void AnimatedChoiceParamField::onKeyToggled() {
+  if (!m_currentParam || !m_actualParam) return;
+  TUndo *undo = new AnimatedChoiceParamUndo(m_actualParam, m_interfaceName,
+                                            m_frame, m_fxHandleStat);
+  if (m_keyToggle->getStatus() == ParamFieldKeyToggle::KEYFRAME) {
+    m_actualParam->deleteKeyframe(m_frame);
+  } else if (m_actualParam->isKeyframe(m_frame)) {
+    m_actualParam->setValue(m_frame,
+                            choiceIndex(m_currentParam->getValue(m_frame)));
+  } else {
+    TDoubleKeyframe key(m_frame,
+                        choiceIndex(m_currentParam->getValue(m_frame)));
+    key.m_type = TDoubleKeyframe::Constant;
+    m_actualParam->setKeyframe(key);
+  }
+  TUndoManager::manager()->add(undo);
+  update(m_frame);
+  emit actualParamChanged();
+  emit paramKeyToggle();
 }
 
 //=============================================================================
@@ -1987,9 +2687,11 @@ void ToneCurveParamField::onKeyToggled() { onKeyToggle(); }
 
 ParamField *ParamField::create(QWidget *parent, QString name,
                                const TParamP &param) {
-  if (TDoubleParamP doubleParam = param)
+  if (TDoubleParamP doubleParam = param) {
+    if (!doubleParam->getUIChoices().empty())
+      return new AnimatedChoiceParamField(parent, name, doubleParam);
     return new MeasuredDoubleParamField(parent, name, doubleParam);
-  else if (TRangeParamP rangeParam = param)
+  } else if (TRangeParamP rangeParam = param)
     return new MeasuredRangeParamField(parent, name, rangeParam);
   else if (TPixelParamP pixelParam = param)
     return new PixelParamField(parent, name, pixelParam);

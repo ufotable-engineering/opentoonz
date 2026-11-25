@@ -142,6 +142,7 @@ private:
   void onDefaultStartupToolChanged();
   // Xsheet
   void onShowKeyframesOnCellAreaChanged();
+  void onCurrentCellColorChanged();
   void onShowXSheetToolbarClicked();
   void onUnifyColumnVisibilityTogglesChanged();
   void onShowXsheetBreadcrumbsClicked();
@@ -150,6 +151,7 @@ private:
   // Preview
   void onBlankCountChanged();
   void onBlankColorChanged();
+  void onSyncSceneAndLevelViewChanged();
   // Onion Skin
   void onOnionSkinVisibilityChanged();
   void onOnionColorChanged();

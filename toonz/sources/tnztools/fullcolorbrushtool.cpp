@@ -34,6 +34,7 @@
 #include "toonz/imagestyles.h"
 #include "toonz/preferences.h"
 #include "toonz/toonzfolders.h"
+#include "toonz/txshsimplelevel.h"
 
 // TnzCore includes
 #include "tgl.h"
@@ -161,7 +162,9 @@ FullColorBrushTool::FullColorBrushTool(std::string name)
     , m_notifier(0)
     , m_presetsLoaded(false)
     , m_firstTime(true)
-    , m_started(false) {
+    , m_started(false)
+    , m_strokeFrameId()
+    , m_strokeLevel() {
   bind(TTool::RasterImage | TTool::EmptyTarget);
   m_thickness.setNonLinearSlider();
 
@@ -273,6 +276,7 @@ void FullColorBrushTool::onActivate() {
   setWorkAndBackupImages();
   onColorStyleChanged();
   updateModifiers();
+  m_skipStrokeUntilDown = false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -281,9 +285,10 @@ void FullColorBrushTool::onDeactivate() {
   if (m_notifier) m_notifier->onDeactivate();
 
   m_inputmanager.finishTracks();
-  m_workRaster = TRaster32P();
-  m_backUpRas  = TRasterP();
-  m_pencilMask = TRasterCM32P();
+  m_workRaster          = TRaster32P();
+  m_backUpRas           = TRasterP();
+  m_pencilMask          = TRasterCM32P();
+  m_skipStrokeUntilDown = false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -295,6 +300,7 @@ void FullColorBrushTool::updateWorkAndBackupRasters(const TRect &rect) {
   if (!ri) return;
 
   TRasterP ras = ri->getRaster();
+  if (!ras || !m_workRaster || !m_backUpRas) return;
 
   const int denominator = 8;
   TRect enlargedRect    = rect + m_lastRect;
@@ -340,6 +346,7 @@ bool FullColorBrushTool::askRead(const TRect &rect) { return askWrite(rect); }
 
 bool FullColorBrushTool::askWrite(const TRect &rect) {
   if (rect.isEmpty()) return true;
+  if (!m_tileSaver || !m_workRaster) return false;
   m_strokeRect += rect;
   m_strokeSegmentRect += rect;
   updateWorkAndBackupRasters(rect);
@@ -423,11 +430,19 @@ void FullColorBrushTool::handleMouseEvent(MouseEventType type,
   if (control != m_inputmanager.state.isKeyPressed(TKey::control))
     m_inputmanager.keyEvent(control, TKey::control, t, nullptr);
 
+  if (m_skipStrokeUntilDown) {
+    if (type == ME_DOWN)
+      m_skipStrokeUntilDown = false;
+    else if (type != ME_MOVE)
+      return;
+  }
+
   if (type == ME_MOVE) {
     THoverList hovers(1, fixedPos);
     m_inputmanager.hoverEvent(hovers);
   } else {
-    bool   isMyPaint   = getApplication()->getCurrentLevelStyle()->getTagId() == 4001;
+    TColorStyle *levelStyle = getApplication()->getCurrentLevelStyle();
+    bool isMyPaint          = levelStyle && levelStyle->getTagId() == 4001;
     int    deviceId    = e.isTablet() ? 1 : 0;
     double defPressure = isMyPaint ? 0.5 : 1.0;
     bool   hasPressure = e.isTablet();
@@ -509,7 +524,12 @@ void FullColorBrushTool::inputMouseMove(const TPointD &position,
     }
   } locals = {this};
 
-  if (state.isKeyPressed(TKey::control) && state.isKeyPressed(TKey::alt)) {
+  const bool resizeBrush =
+      Preferences::instance()->useCtrlAltToResizeBrushEnabled() &&
+      state.isKeyPressed(TKey::control) && state.isKeyPressed(TKey::alt) &&
+      !state.isKeyPressed(TKey::shift);
+
+  if (resizeBrush) {
     const TPointD &diff = position - m_mousePos;
     if (getBrushStyle()) {
       locals.add(m_modifierSize, 0.01 * diff.x);
@@ -527,17 +547,28 @@ void FullColorBrushTool::inputMouseMove(const TPointD &position,
 //-------------------------------------------------------------------------------------------------------------
 
 void FullColorBrushTool::inputSetBusy(bool busy) {
+  if (m_skipStrokeUntilDown && busy) return;
   if (m_started == busy) return;
   if (busy) {
     // begin paint
     TRasterImageP ri = (TRasterImageP)getImage(true);
     if (!ri) return;// ri = (TRasterImageP)touchImage(); touch in preLeftButtonDown
     TRasterP ras = ri->getRaster();
+    if (!ras) return;
 
     if (!(m_workRaster && m_backUpRas)) setWorkAndBackupImages();
+    if (!m_workRaster) return;
     m_workRaster->lock();
-    m_tileSet   = new TTileSetFullColor(ras->getSize());
-    m_tileSaver = new TTileSaverFullColor(ras, m_tileSet);
+    m_tileSet       = new TTileSetFullColor(ras->getSize());
+    m_tileSaver     = new TTileSaverFullColor(ras, m_tileSet);
+    m_strokeFrameId = getCurrentFid();
+    m_strokeLevel   = TXshSimpleLevelP();
+    if (TTool::Application *app = TTool::getApplication()) {
+      if (TXshLevelHandle *lh = app->getCurrentLevel()) {
+        if (TXshLevel *xl = lh->getLevel())
+          m_strokeLevel = xl->getSimpleLevel();
+      }
+    }
 
     // update color here since the current style might be switched
     // with numpad shortcut keys
@@ -555,31 +586,7 @@ void FullColorBrushTool::inputSetBusy(bool busy) {
       m_pencilColor  = premultiply(color);
     }
   } else {
-    // end paint
-    if (m_pencilStroke && !m_strokeRect.isEmpty())
-      m_pencilMask->extract(m_strokeRect)->clear();
-    if (TRasterImageP ri = (TRasterImageP)getImage(true)) {
-      TRasterP ras = ri->getRaster();
-
-      m_lastRect.empty();
-      m_workRaster->unlock();
-
-      if (m_tileSet->getTileCount() > 0) {
-        delete m_tileSaver;
-        TTool::Application *app   = TTool::getApplication();
-        TXshLevel *level          = app->getCurrentLevel()->getLevel();
-        TXshSimpleLevelP simLevel = level->getSimpleLevel();
-        TFrameId frameId          = getCurrentFid();
-        TRasterP subras           = ras->extract(m_strokeRect)->clone();
-        TUndoManager::manager()->add(new FullColorBrushUndo(
-            m_tileSet, simLevel.getPointer(), frameId, m_isFrameCreated, subras,
-            m_strokeRect.getP00()));
-      }
-
-      notifyImageChanged();
-      m_strokeRect.empty();
-    }
-    m_pencilStroke = false;
+    commitStroke();
   }
   m_started = busy;
 }
@@ -597,7 +604,8 @@ void FullColorBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
   
   TRasterImageP ri = (TRasterImageP)getImage(true);
   if (!ri) return;
-  TRasterP ras      = ri->getRaster();
+  TRasterP ras = ri->getRaster();
+  if (!ras) return;
   TPointD rasCenter = ras->getCenterD();
 
   m_strokeSegmentRect.empty();
@@ -616,9 +624,9 @@ void FullColorBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
     handler = dynamic_cast<TrackHandler *>(track.handler.getPointer());
     if (!handler) return;
 
-    bool isMyPaint =
-        getApplication()->getCurrentLevelStyle()->getTagId() == 4001;
-    double defPressure = isMyPaint ? 0.5 : 1.0;
+    TColorStyle *levelStyle = getApplication()->getCurrentLevelStyle();
+    bool isMyPaint          = levelStyle && levelStyle->getTagId() == 4001;
+    double defPressure      = isMyPaint ? 0.5 : 1.0;
     double pressure    = m_enabledPressure ? point.pressure : defPressure;
 
     // paint stroke
@@ -660,6 +668,7 @@ void FullColorBrushTool::draw() {
     if (!Preferences::instance()->isCursorOutlineEnabled()) return;
 
     TRasterP ras = ri->getRaster();
+    if (!ras) return;
     if (isPencilModeActive()) {
       drawPencilCursor(ras->getSize());
       m_inputmanager.draw();
@@ -780,7 +789,56 @@ TPropertyGroup *FullColorBrushTool::getProperties(int targetType) {
 
 //----------------------------------------------------------------------------------------------------------
 
-void FullColorBrushTool::onImageChanged() { setWorkAndBackupImages(); }
+void FullColorBrushTool::commitStroke() {
+  if (!m_started) return;
+
+  if (m_pencilStroke && m_pencilMask && !m_strokeRect.isEmpty())
+    m_pencilMask->extract(m_strokeRect)->clear();
+
+  TFrameId frameId =
+      m_strokeFrameId.isEmptyFrame() ? getCurrentFid() : m_strokeFrameId;
+  TXshSimpleLevel *sl = m_strokeLevel.getPointer();
+
+  TRasterImageP ri =
+      sl ? TRasterImageP(sl->getFrame(frameId, true)) : TRasterImageP();
+  TRasterP ras = ri ? ri->getRaster() : TRasterP();
+
+  m_lastRect.empty();
+  if (m_workRaster) m_workRaster->unlock();
+
+  if (ras && sl && m_tileSet && m_tileSet->getTileCount() > 0) {
+    delete m_tileSaver;
+    m_tileSaver     = 0;
+    TRasterP subras = ras->extract(m_strokeRect)->clone();
+    TUndoManager::manager()->add(
+        new FullColorBrushUndo(m_tileSet, sl, frameId, m_isFrameCreated, subras,
+                               m_strokeRect.getP00()));
+    m_tileSet = 0;
+  } else {
+    delete m_tileSaver;
+    m_tileSaver = 0;
+    delete m_tileSet;
+    m_tileSet = 0;
+  }
+
+  m_started       = false;
+  m_pencilStroke  = false;
+  m_strokeFrameId = TFrameId();
+  m_strokeLevel   = TXshSimpleLevelP();
+  m_strokeRect.empty();
+  if (ras && sl) notifyImageChanged(frameId, sl);
+}
+
+//----------------------------------------------------------------------------------------------------------
+
+void FullColorBrushTool::onImageChanged() {
+  m_inputmanager.reset();
+  if (m_started) {
+    commitStroke();
+    m_skipStrokeUntilDown = true;
+  }
+  setWorkAndBackupImages();
+}
 
 //----------------------------------------------------------------------------------------------------------
 
@@ -788,7 +846,8 @@ void FullColorBrushTool::setWorkAndBackupImages() {
   TRasterImageP ri = (TRasterImageP)getImage(false, 1);
   if (!ri) return;
 
-  TRasterP ras   = ri->getRaster();
+  TRasterP ras = ri->getRaster();
+  if (!ras) return;
   TDimension dim = ras->getSize();
 
   if (!m_workRaster || m_workRaster->getLx() != dim.lx ||

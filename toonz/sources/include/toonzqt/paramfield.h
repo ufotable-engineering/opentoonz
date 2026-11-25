@@ -8,6 +8,8 @@
 #endif
 
 #include "tcommon.h"
+#include <array>
+#include <vector>
 #include <QWidget>
 #include <QSpinBox>
 #include <QSlider>
@@ -20,6 +22,7 @@
 
 #include "tgeometry.h"
 #include "tparam.h"
+#include "tparamchange.h"
 #include "tnotanimatableparam.h"
 #include "tspectrumparam.h"
 #include "ttonecurveparam.h"
@@ -43,6 +46,7 @@ class QComboBox;
 class QHBoxLayout;
 class TFxHandle;
 class QFontComboBox;
+class QLineEdit;
 
 namespace DVGui {
 class LineEdit;
@@ -94,6 +98,7 @@ public:
   virtual QSize getPreferredSize() { return QSize(200, 28); }
 
   static void setFxHandle(TFxHandle *fxHandle);
+  static TFxHandle* getFxHandle() { return m_fxHandleStat; }
 
   virtual void setPrecision(int precision) {}
 signals:
@@ -431,14 +436,24 @@ protected slots:
 //-----------------------------------------------------------------------------
 
 class DVAPI PixelParamField final
-    : public AnimatedParamField<TPixel32, TPixelParamP> {
+    : public AnimatedParamField<TPixel32, TPixelParamP>,
+      private TParamObserver {
   Q_OBJECT
 
   DVGui::ColorField *m_colorField;
+  std::array<TDoubleParamP, 4> m_observedChannels;
+  bool m_previewNeedsSync = false;
+
+  void observeChannels(bool observe);
+  void onChange(const TParamChange &) override { m_previewNeedsSync = true; }
 
 public:
   PixelParamField(QWidget *parent, QString name, const TPixelParamP &param);
+  ~PixelParamField() override;
 
+  void setParam(const TParamP &current, const TParamP &actual,
+                int frame) override;
+  void update(int frame) override;
   void updateField(TPixel32 value) override;
 
   QSize getPreferredSize() override { return QSize(480, 40); }
@@ -477,20 +492,50 @@ protected slots:
 //-----------------------------------------------------------------------------
 
 class DVAPI SpectrumParamField final
-    : public AnimatedParamField<TSpectrum, TSpectrumParamP> {
+    : public AnimatedParamField<TSpectrum, TSpectrumParamP>,
+      private TParamObserver {
   Q_OBJECT
 
   DVGui::SpectrumField *m_spectrumField;
+  QLineEdit *m_preciseChannels[4] = {nullptr, nullptr, nullptr, nullptr};
+  int m_preciseStopIndex          = -1;
+  TSpectrumParamP m_observedParam;
+  std::vector<TDoubleParamP> m_observedCurves;
+  bool m_previewNeedsSync = false;
+
+  void observeParam(bool observe);
+  void observeCurves(const TSpectrumParamP &param);
+  bool syncPrecisePreview();
+  void onChange(const TParamChange &) override { m_previewNeedsSync = true; }
+  void ensurePreciseEditor();
+  void cancelPreciseEdit();
+  void refreshPreciseEditor();
+  bool hasPreciseStop(int index) const;
+  bool hasPreciseTarget(int channel) const;
+  bool readPreciseChannel(int channel, double &value);
+  void commitPreciseChannel(int channel);
+  void setPreciseChannel(int stop, int channel, double value);
+  void applyPreciseStopChange(int index, const TSpectrum::Key &before,
+                              const TSpectrum::Key &after);
+  void finishPreciseEdit(TUndo *undo);
+  void onPreciseChange();
 
 public:
   SpectrumParamField(QWidget *parent, QString name,
                      const TSpectrumParamP &param);
+  ~SpectrumParamField() override;
 
+  void setParam(const TParamP &current, const TParamP &actual,
+                int frame) override;
+  void update(int frame) override;
   void updateField(TSpectrum value) override;
 
   void setParams();
 
-  QSize getPreferredSize() override { return QSize(477, 60); }
+  QSize getPreferredSize() override {
+    return property("preserveColorPrecision").toBool() ? QSize(560, 88)
+                                                       : QSize(477, 60);
+  }
 
 protected slots:
   void onKeyToggled();
@@ -511,6 +556,36 @@ public:
       : ParamField(parent, paramName, param, addEmptyLabel) {}
 signals:
   void modeChanged(int);
+};
+
+class DVAPI AnimatedChoiceParamField final : public ModeChangerParamField,
+                                             private TParamObserver {
+  Q_OBJECT
+  TDoubleParamP m_currentParam, m_actualParam;
+  QComboBox *m_choices  = nullptr;
+  QCheckBox *m_checkBox = nullptr;
+  ParamFieldKeyToggle *m_keyToggle;
+  int m_frame = 0;
+  int m_choiceCount;
+  bool m_previewNeedsSync = false;
+
+  void onChange(const TParamChange &) override { m_previewNeedsSync = true; }
+  int choiceIndex(double value) const;
+  void updateWidgets(int value);
+  void updateKeyToggle();
+
+public:
+  AnimatedChoiceParamField(QWidget *parent, QString name,
+                           const TDoubleParamP &param);
+  ~AnimatedChoiceParamField() override;
+  void setParam(const TParamP &current, const TParamP &actual,
+                int frame) override;
+  void update(int frame) override;
+  QSize getPreferredSize() override { return QSize(200, 28); }
+
+protected slots:
+  void onChoiceChanged(int value);
+  void onKeyToggled();
 };
 
 class DVAPI ModeSensitiveBox final : public QWidget {
