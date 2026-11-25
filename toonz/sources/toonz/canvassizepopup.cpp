@@ -140,8 +140,6 @@ int getPixelLength(double measuredLength, TMeasure *measure, double dpi,
 
 //-----------------------------------------------------------------------------
 
-// The level resolution is that of the first frame, and frames of other sizes
-// are displayed centered on it.
 TPoint getFrameOffset(const TPoint &levelOffset, const TDimension &levelDim,
                       const TDimension &frameDim) {
   return levelOffset + TPoint((levelDim.lx - frameDim.lx) / 2,
