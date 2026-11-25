@@ -731,7 +731,7 @@ void CanvasSizePopup::onOkBtn() {
   QApplication::setOverrideCursor(Qt::WaitCursor);
   bool crop = false;
   for (const TFrameId &fid : fids) {
-    TImageP img = m_sl->getFrame(fid, false);
+    TImageP img = m_sl->getFullsampledFrame(fid, ImageManager::none);
     TRasterImageP ri(img);
     TToonzImageP ti(img);
     if (!ri && !ti) continue;
