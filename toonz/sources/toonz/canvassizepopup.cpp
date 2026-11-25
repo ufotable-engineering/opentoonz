@@ -137,6 +137,24 @@ int getPixelLength(double measuredLength, TMeasure *measure, double dpi,
   double inchValue = measure->getCurrentUnit()->convertFrom(measuredLength);
   return tround(inchValue * dpi);
 }
+
+//-----------------------------------------------------------------------------
+
+// The level resolution is that of the first frame, and frames of other sizes
+// are displayed centered on it.
+TPoint getFrameOffset(const TPoint &levelOffset, const TDimension &levelDim,
+                      const TDimension &frameDim) {
+  return levelOffset + TPoint((levelDim.lx - frameDim.lx) / 2,
+                              (levelDim.ly - frameDim.ly) / 2);
+}
+
+//-----------------------------------------------------------------------------
+
+bool canvasCopyWouldCrop(const TDimension &srcDim, const TDimension &dstDim,
+                         const TPoint &pos) {
+  return pos.x < 0 || pos.y < 0 || pos.x + srcDim.lx > dstDim.lx ||
+         pos.y + srcDim.ly > dstDim.ly;
+}
 }  // namespace
 //=============================================================================
 // PeggingWidget
@@ -691,15 +709,6 @@ void CanvasSizePopup::onOkBtn() {
     return;
   }
 
-  if (dim.lx > newXValue || dim.ly > newYValue) {
-    int ret = DVGui::MsgBox(tr("The new canvas size is smaller than the "
-                               "current one.\nDo you want to crop the canvas?"),
-                            tr("Crop"), tr("Cancel"));
-    if (ret == 2) return;
-  }
-  close();
-
-  QApplication::setOverrideCursor(Qt::WaitCursor);
   PeggingPositions pegPos = m_pegging->getPeggingPosition();
   TDimension newDim(newXValue, newYValue);
 
@@ -716,9 +725,36 @@ void CanvasSizePopup::onOkBtn() {
   if (pegPos == e00 || pegPos == e01 || pegPos == e02)
     pos.y = newDim.ly - dim.ly;
 
-  int i;
   std::vector<TFrameId> fids;
   m_sl->getFids(fids);
+
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+  bool crop = false;
+  for (const TFrameId &fid : fids) {
+    TImageP img = m_sl->getFrame(fid, false);
+    TRasterImageP ri(img);
+    TToonzImageP ti(img);
+    if (!ri && !ti) continue;
+    TDimension frameDim =
+        ri ? ri->getRaster()->getSize() : ti->getRaster()->getSize();
+    if (canvasCopyWouldCrop(frameDim, newDim,
+                            getFrameOffset(pos, dim, frameDim))) {
+      crop = true;
+      break;
+    }
+  }
+  QApplication::restoreOverrideCursor();
+
+  if (crop) {
+    int ret = DVGui::MsgBox(tr("The new canvas size is smaller than the "
+                               "current one.\nDo you want to crop the canvas?"),
+                            tr("Crop"), tr("Cancel"));
+    if (ret == 2) return;
+  }
+  close();
+
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+  int i;
   TUndoManager::manager()->beginBlock();
   for (i = 0; i < (int)fids.size(); i++) {
     TImageP img = m_sl->getFrame(fids[i], true);
@@ -734,7 +770,7 @@ void CanvasSizePopup::onOkBtn() {
       // TRop::addBackground(newRas,TPixel32::White);
       else
         newRas->clear();
-      newRas->copy(ras, pos);
+      newRas->copy(ras, getFrameOffset(pos, dim, ras->getSize()));
       TRasterImageP newImg(newRas);
       double xdpi, ydpi;
       ri->getDpi(xdpi, ydpi);
@@ -746,7 +782,7 @@ void CanvasSizePopup::onOkBtn() {
       TRasterP ras    = ti->getRaster();
       TRasterP newRas = ras->create(newDim.lx, newDim.ly);
       newRas->clear();
-      newRas->copy(ras, pos);
+      newRas->copy(ras, getFrameOffset(pos, dim, ras->getSize()));
       TRect box;
       TRop::computeBBox(newRas, box);
       TToonzImageP newImg(newRas, box);
