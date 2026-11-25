@@ -69,6 +69,7 @@ class ClickableLabel;
 
 class QLabel;
 class QPushButton;
+class QToolButton;
 class QPropertyAnimation;
 class QFrame;
 class QHBoxLayout;
@@ -806,8 +807,13 @@ class DVAPI ShiftTraceSettingsPane final : public QFrame {
   QComboBox *m_colorModeCombo;
   DVGui::CheckBox *m_inksOnlyCB;
 
+  QToolButton *m_displayFoldBtn, *m_detailFoldBtn;
+  QWidget *m_displayContents;
+  QList<QWidget *> m_detailWidgets;
+
   void applySnapRatio(const std::wstring &value);
   void commitTypedValue();
+  void updateFolds();
   void updateGhostFields();
   void updatePositionUnit();
   double ghostFieldValue(int index) const;
