@@ -147,14 +147,6 @@ TPoint getFrameOffset(const TPoint &levelOffset, const TDimension &levelDim,
   return levelOffset + TPoint((levelDim.lx - frameDim.lx) / 2,
                               (levelDim.ly - frameDim.ly) / 2);
 }
-
-//-----------------------------------------------------------------------------
-
-bool canvasCopyWouldCrop(const TDimension &srcDim, const TDimension &dstDim,
-                         const TPoint &pos) {
-  return pos.x < 0 || pos.y < 0 || pos.x + srcDim.lx > dstDim.lx ||
-         pos.y + srcDim.ly > dstDim.ly;
-}
 }  // namespace
 //=============================================================================
 // PeggingWidget
@@ -725,20 +717,18 @@ void CanvasSizePopup::onOkBtn() {
   if (pegPos == e00 || pegPos == e01 || pegPos == e02)
     pos.y = newDim.ly - dim.ly;
 
+  int i;
   std::vector<TFrameId> fids;
   m_sl->getFids(fids);
 
   QApplication::setOverrideCursor(Qt::WaitCursor);
   bool crop = false;
   for (const TFrameId &fid : fids) {
-    TImageP img = m_sl->getFullsampledFrame(fid, ImageManager::none);
-    TRasterImageP ri(img);
-    TToonzImageP ti(img);
-    if (!ri && !ti) continue;
-    TDimension frameDim =
-        ri ? ri->getRaster()->getSize() : ti->getRaster()->getSize();
-    if (canvasCopyWouldCrop(frameDim, newDim,
-                            getFrameOffset(pos, dim, frameDim))) {
+    TImageP img  = m_sl->getFullsampledFrame(fid, ImageManager::none);
+    TRasterP ras = img ? img->raster() : TRasterP();
+    if (!ras) continue;
+    TPoint framePos = getFrameOffset(pos, dim, ras->getSize());
+    if (!TRect(newDim).contains(ras->getBounds() + framePos)) {
       crop = true;
       break;
     }
@@ -754,7 +744,6 @@ void CanvasSizePopup::onOkBtn() {
   close();
 
   QApplication::setOverrideCursor(Qt::WaitCursor);
-  int i;
   TUndoManager::manager()->beginBlock();
   for (i = 0; i < (int)fids.size(); i++) {
     TImageP img = m_sl->getFrame(fids[i], true);
